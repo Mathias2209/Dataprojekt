@@ -1,0 +1,4 @@
+Oversigt over hvad er blevet lavet (TLDR format):
+
+Tobias Granild:
+Har tjekket om "Unik Kode (ui)" attributten kan bruges til identifikation, dvs unikke. ui koderne er ikke unikke da flere typer tøj er blevet tildelt samme ui kode. Dette gælder globalt, på månedsbasis for alle måneder og i tøjkategorien "T-shirts". ui kan dermed ikke bruges til at tracke et stykke tøj gennem måneder udelukkende på attributten "Unik Kode (ui)". Dette kan konkluderes på baggrund af filen "uniqueness_ui_11_02".
