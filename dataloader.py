@@ -14,16 +14,31 @@ filer = response.json()
 
 xlsx_filer = [f for f in filer if f["name"].startswith("PLC") and f["name"].endswith(".xlsx")]
 
+# Maps 3-letter abbreviations (as they appear in filenames like "Apr. 2023") to full Danish names
+ABBREV_MAP = {
+    'jan': 'Januar',  'feb': 'Februar', 'mar': 'Marts',    'apr': 'April',
+    'maj': 'Maj',     'jun': 'Juni',    'jul': 'Juli',     'aug': 'August',
+    'sep': 'September','okt': 'Oktober','nov': 'November', 'dec': 'December',
+}
+
+def parse_maaned(filename):
+    """Extract full Danish month name from filenames like 'PLC, Product detaljeret, Aarhus, Apr. 2023.xlsx'"""
+    name_lower = filename.lower()
+    # Match abbreviated form: "apr. 2023", "okt. 2023" etc.
+    m = re.search(r'\b([a-z]{3})\.?\s+\d{4}', name_lower)
+    if m and m.group(1) in ABBREV_MAP:
+        return ABBREV_MAP[m.group(1)]
+    # Fallback: full name anywhere in filename
+    m2 = re.search(r'(januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)', name_lower)
+    if m2:
+        return m2.group(1).capitalize()
+    return filename  # last resort
+
 dataframes = []
 for fil in xlsx_filer:
     r = requests.get(fil["download_url"], verify=False)
     df = pd.read_excel(io.BytesIO(r.content), skiprows=2)
-    
-    # Extract month from filename (e.g. "PLC_Januar_2023.xlsx" -> "Januar")
-    match = re.search(r'(januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)', 
-                      fil["name"], re.IGNORECASE)
-    df["Måned"] = match.group(1).capitalize() if match else fil["name"]
-
+    df["Måned"] = parse_maaned(fil["name"])
     dataframes.append(df)
 
 samlet_df = pd.concat(dataframes, ignore_index=True)
@@ -48,31 +63,30 @@ samlet_df = samlet_df[~samlet_df["Unik Kode (ui)"].isin(bad_ui_year)].copy()
 # Filter all cases where Stk. tøj per kassationsdato is larger than 1
 samlet_df = samlet_df[samlet_df["Stk. tøj per kassationsdato"] == 1]
 
-# Filter all cases where antal vaske is 0 or lager
+# Filter all cases where antal vaske is 0 or lower
 samlet_df = samlet_df[samlet_df["Total antal vask"] >= 0]
 
 
 def kategoriser_produkt(produktnavn):
     produktnavn = str(produktnavn).lower()
-    
-    # Tjek i prioriteret rækkefølge (mest specifik først)
+
     if any(ord in produktnavn for ord in ['forklæde', 'forkl']):
         return 'Forklæde'
     elif 'kokkej' in produktnavn:
         return 'Kokkejakke'
-    elif any(ord in produktnavn for ord in ['shorts', 'knickers']):
+    elif any(ord in produktnavn for ord in ['shorts', 'knickers', 'nederdel']):
         return 'Shorts'
     elif any(ord in produktnavn for ord in ['jakke', 'vest', 'jak', 'jk', 'softshell', 'soft shell']):
         return 'Jakke'
     elif 'fleece' in produktnavn:
         return 'Fleece'
-    elif any(ord in produktnavn for ord in ['sweat', 'ziptrøje', 'tunika', 'bluse', 'cardigan']):
+    elif any(ord in produktnavn for ord in ['sweat', 'ziptrøje', 'tunika', 'bluse', 'cardigan', 'sjælevarm', 'fusion shirt']):
         return 'Langærmet'
-    elif any(ord in produktnavn for ord in ['t-shirt', 'polo', 'tshirt']):
+    elif any(ord in produktnavn for ord in ['t-shirt', 'polo', 'tshirt', 'undertrøje']):
         return 'T-shirt'
     elif 'kittel' in produktnavn or re.search(r'\bkit[\s\.]', produktnavn):
         return 'Kittel'
-    elif any(ord in produktnavn for ord in ['skjorte', 'skj.']):
+    elif any(ord in produktnavn for ord in ['skjorte', 'skj.', 'kokkesk.']):
         return 'Skjorte'
     elif any(ord in produktnavn for ord in ['buks', 'benk', 'benklæder', 'unisexben', 'jeans', 'pull on uni']):
         return 'Bukser'
@@ -80,29 +94,27 @@ def kategoriser_produkt(produktnavn):
         return 'Overall'
     elif any(ord in produktnavn for ord in ['kokkebuss', 'busseron', 'halvbusseron']):
         return 'Busseron'
-    elif any(ord in produktnavn for ord in ['strømpe', 'sok']):
-        return 'Strømper'
     else:
         return 'Andet'
 
-# Tilføj kategori
 samlet_df['Kategori'] = samlet_df['Produkt - Produkt'].apply(kategoriser_produkt)
 
-# Nu kan du filtrere uden overlap
-skjorte_data = samlet_df[samlet_df['Kategori'] == 'Skjorte']
-shorts_data = samlet_df[samlet_df['Kategori'] == 'Shorts']
-bukse_data = samlet_df[samlet_df['Kategori'] == 'Bukser']
-tshirt_data = samlet_df[samlet_df['Kategori'] == 'T-shirt']
-langærmet_data = samlet_df[samlet_df['Kategori'] == 'Langærmet']
-jakke_data = samlet_df[samlet_df['Kategori'] == 'Jakke']
-fleece_data = samlet_df[samlet_df['Kategori'] == 'Fleece']
-overall_data = samlet_df[samlet_df['Kategori'] == 'Overall']
-forklæde_data = samlet_df[samlet_df['Kategori'] == 'Forklæde']
-kittel_data = samlet_df[samlet_df['Kategori'] == 'Kittel']
-busseron_data = samlet_df[samlet_df['Kategori'] == 'Busseron']
+skjorte_data    = samlet_df[samlet_df['Kategori'] == 'Skjorte']
+shorts_data     = samlet_df[samlet_df['Kategori'] == 'Shorts']
+bukse_data      = samlet_df[samlet_df['Kategori'] == 'Bukser']
+tshirt_data     = samlet_df[samlet_df['Kategori'] == 'T-shirt']
+langærmet_data  = samlet_df[samlet_df['Kategori'] == 'Langærmet']
+jakke_data      = samlet_df[samlet_df['Kategori'] == 'Jakke']
+fleece_data     = samlet_df[samlet_df['Kategori'] == 'Fleece']
+overall_data    = samlet_df[samlet_df['Kategori'] == 'Overall']
+forklæde_data   = samlet_df[samlet_df['Kategori'] == 'Forklæde']
+kittel_data     = samlet_df[samlet_df['Kategori'] == 'Kittel']
+busseron_data   = samlet_df[samlet_df['Kategori'] == 'Busseron']
 kokkejakke_data = samlet_df[samlet_df['Kategori'] == 'Kokkejakke']
-sokke_data = samlet_df[samlet_df['Kategori'] == 'Strømper']
-andre_data = samlet_df[samlet_df['Kategori'] == 'Andet']
+andre_data      = samlet_df[samlet_df['Kategori'] == 'Andet']
 
-# Tjek resultater
+# Verify
+print("Måneder fundet i data:")
+print(sorted(samlet_df['Måned'].unique().tolist()))
+print("\nKategori fordeling:")
 print(samlet_df['Kategori'].value_counts())
