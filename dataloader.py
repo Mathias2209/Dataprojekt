@@ -60,14 +60,14 @@ def kategoriser_produkt(produktnavn):
         return 'Forklæde'
     elif 'kokkej' in produktnavn:
         return 'Kokkejakke'
-    elif 'shorts' in produktnavn:
+    elif any(ord in produktnavn for ord in ['shorts', 'knickers']):
         return 'Shorts'
     elif any(ord in produktnavn for ord in ['jakke', 'vest', 'jak', 'jk', 'softshell', 'soft shell']):
         return 'Jakke'
     elif 'fleece' in produktnavn:
         return 'Fleece'
-    elif any(ord in produktnavn for ord in ['sweat', 'ziptrøje']):
-        return 'Sweatshirt'
+    elif any(ord in produktnavn for ord in ['sweat', 'ziptrøje', 'tunika', 'bluse', 'cardigan']):
+        return 'Langærmet'
     elif any(ord in produktnavn for ord in ['t-shirt', 'polo', 'tshirt']):
         return 'T-shirt'
     elif 'kittel' in produktnavn or re.search(r'\bkit[\s\.]', produktnavn):
@@ -93,7 +93,7 @@ skjorte_data = samlet_df[samlet_df['Kategori'] == 'Skjorte']
 shorts_data = samlet_df[samlet_df['Kategori'] == 'Shorts']
 bukse_data = samlet_df[samlet_df['Kategori'] == 'Bukser']
 tshirt_data = samlet_df[samlet_df['Kategori'] == 'T-shirt']
-sweatshirt_data = samlet_df[samlet_df['Kategori'] == 'Sweatshirt']
+langærmet_data = samlet_df[samlet_df['Kategori'] == 'Langærmet']
 jakke_data = samlet_df[samlet_df['Kategori'] == 'Jakke']
 fleece_data = samlet_df[samlet_df['Kategori'] == 'Fleece']
 overall_data = samlet_df[samlet_df['Kategori'] == 'Overall']
@@ -106,5 +106,3 @@ andre_data = samlet_df[samlet_df['Kategori'] == 'Andet']
 
 # Tjek resultater
 print(samlet_df['Kategori'].value_counts())
-
-
