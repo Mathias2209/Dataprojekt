@@ -60,9 +60,9 @@ def kategoriser_produkt(produktnavn):
         return 'Forklæde'
     elif 'kokkej' in produktnavn:
         return 'Kokkejakke'
-    elif 'shorts' in produktnavn:
+    elif any(ord in produktnavn for ord in ['shorts', 'knickers']):
         return 'Shorts'
-    elif any(ord in produktnavn for ord in ['jakke', 'vest', 'jak', 'jk', 'softshell', 'soft shell', 'knickers']):
+    elif any(ord in produktnavn for ord in ['jakke', 'vest', 'jak', 'jk', 'softshell', 'soft shell']):
         return 'Jakke'
     elif 'fleece' in produktnavn:
         return 'Fleece'
