@@ -48,6 +48,9 @@ samlet_df = samlet_df[~samlet_df["Unik Kode (ui)"].isin(bad_ui_year)].copy()
 # Filter all cases where Stk. tøj per kassationsdato is larger than 1
 samlet_df = samlet_df[samlet_df["Stk. tøj per kassationsdato"] == 1]
 
+# Filter all cases where antal vaske is 0 or larger
+samlet_df = samlet_df[samlet_df["Total antal vask"] >= 0]
+
 
 def kategoriser_produkt(produktnavn):
     produktnavn = str(produktnavn).lower()
@@ -103,7 +106,5 @@ andre_data = samlet_df[samlet_df['Kategori'] == 'Andet']
 
 # Tjek resultater
 print(samlet_df['Kategori'].value_counts())
-
-
 
 
