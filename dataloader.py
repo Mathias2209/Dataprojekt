@@ -106,7 +106,3 @@ andre_data = samlet_df[samlet_df['Kategori'] == 'Andet']
 
 # Tjek resultater
 print(samlet_df['Kategori'].value_counts())
-
-
-
-
