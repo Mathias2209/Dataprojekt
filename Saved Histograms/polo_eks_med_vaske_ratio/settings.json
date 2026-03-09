@@ -1,0 +1,24 @@
+{
+  "datasæt": "T-shirt",
+  "kassationsårsag": "Alm.slid uden restværdi",
+  "kategorier": [
+    "Polo"
+  ],
+  "bins": 60,
+  "min_dage": 0,
+  "max_dage": 2922,
+  "min_vask": 0,
+  "max_vask": 250,
+  "min_ratio": 0.4,
+  "max_ratio": 4.499999999999999,
+  "x_skala": "År",
+  "log_color": true,
+  "vmin": 0.1,
+  "ref_lines": [
+    "4 vask/måned",
+    "2 vask/måned",
+    "1 vask/måned",
+    "1 vask/3 mdr."
+  ],
+  "gemt": "2026-03-09T13:41:16.045897"
+}
