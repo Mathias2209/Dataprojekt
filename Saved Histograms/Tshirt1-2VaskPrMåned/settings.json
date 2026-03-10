@@ -1,0 +1,22 @@
+{
+  "datasæt": "T-shirt",
+  "kassationsårsag": "Alle",
+  "kategorier": [
+    "T-shirt"
+  ],
+  "bins": 60,
+  "min_dage": 0,
+  "max_dage": 2922,
+  "min_vask": 0,
+  "max_vask": 250,
+  "min_ratio": 1.0,
+  "max_ratio": 2.0,
+  "x_skala": "Dage",
+  "log_color": true,
+  "vmin": 0.1,
+  "ref_lines": [
+    "2 vask/måned",
+    "1 vask/måned"
+  ],
+  "gemt": "2026-03-10T12:27:06.343288"
+}

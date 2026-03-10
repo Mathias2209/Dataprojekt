@@ -9,16 +9,14 @@
   "max_dage": 2922,
   "min_vask": 0,
   "max_vask": 250,
-  "min_ratio": 0.4,
-  "max_ratio": 4.5,
+  "min_ratio": 1.0,
+  "max_ratio": 2.0,
   "x_skala": "År",
   "log_color": true,
   "vmin": 0.1,
   "ref_lines": [
-    "4 vask/måned",
     "2 vask/måned",
-    "1 vask/måned",
-    "1 vask/3 mdr."
+    "1 vask/måned"
   ],
-  "gemt": "2026-03-10T11:27:39.079201"
+  "gemt": "2026-03-10T13:24:44.910771"
 }
