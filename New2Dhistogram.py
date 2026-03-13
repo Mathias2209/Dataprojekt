@@ -8,8 +8,8 @@ from PyQt5.QtWidgets import (
     QMessageBox, QListWidget, QAbstractItemView, QTabWidget,
     QSplitter, QGroupBox, QToolButton
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QFont, QColor, QPalette, QPainter, QLinearGradient
 
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -17,38 +17,12 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.colors import LogNorm, Normalize
 
-# ── Try importing dataloader ───────────────────────────────────────────────────
-try:
-    from dataloader import samlet_df
-    from dataloader import (
-        skjorte_data, shorts_data, bukse_data, tshirt_data,
-        langærmet_data, jakke_data, fleece_data, overall_data,
-        forklæde_data, kittel_data, busseron_data, kokkejakke_data,
-        andre_data
-    )
-    DEMO_MODE = False
-except ImportError:
-    import pandas as pd
-    print("⚠  dataloader not found — running in DEMO mode with synthetic data.")
-    DEMO_MODE = True
-    rng = np.random.default_rng(42)
-    def _make_df(n=3000):
-        dage  = rng.integers(30, 2800, n)
-        vask  = (dage / 365.25 * rng.uniform(10, 60, n)).astype(int)
-        ratio = vask / (dage / 30.437)
-        årsager = rng.choice(['Slidt', 'Beskadiget', 'Forældet', 'Andet'], n)
-        return pd.DataFrame({'Dage i cirkulation': dage,
-                             'Total antal vask': vask,
-                             'Vask per måned': ratio,
-                             'Kassationsårsag (ui)': årsager})
-    samlet_df = _make_df(8000)
-    skjorte_data = _make_df(1200); shorts_data  = _make_df(800)
-    bukse_data   = _make_df(900);  tshirt_data  = _make_df(1100)
-    langærmet_data = _make_df(600); jakke_data  = _make_df(500)
-    fleece_data  = _make_df(400);  overall_data = _make_df(300)
-    forklæde_data = _make_df(350); kittel_data  = _make_df(450)
-    busseron_data = _make_df(250); kokkejakke_data = _make_df(200)
-    andre_data   = _make_df(700)
+DEMO_MODE = False
+
+# Dataset globals — filled in during bootstrap inside main()
+samlet_df = skjorte_data = shorts_data = bukse_data = tshirt_data = None
+langærmet_data = jakke_data = fleece_data = overall_data = None
+forklæde_data = kittel_data = busseron_data = kokkejakke_data = andre_data = None
 
 # ── Global config ──────────────────────────────────────────────────────────────
 SCALE_CONFIG = {
@@ -56,15 +30,9 @@ SCALE_CONFIG = {
     'Måneder': {'divisor': 30.437, 'label': 'Måneder i cirkulation'},
     'År':      {'divisor': 365.25, 'label': 'År i cirkulation'},
 }
-DATASET_MAP = {
-    'Samlet':     samlet_df,     'Skjorte':    skjorte_data,
-    'Shorts':     shorts_data,   'Bukser':      bukse_data,
-    'T-shirt':    tshirt_data,   'Langærmet':  langærmet_data,
-    'Jakke':      jakke_data,    'Fleece':      fleece_data,
-    'Forklæde':   forklæde_data, 'Kittel':      kittel_data,
-    'Busseron':   busseron_data, 'Kokkejakke':  kokkejakke_data,
-    'Overall':    overall_data,  'Andet':       andre_data,
-}
+# DATASET_MAP is built after bootstrap() loads the data
+DATASET_MAP = {}
+
 REF_LINE_DEFS = [
     (30.437 / 4, '4 vask/måned'),
     (30.437 / 2, '2 vask/måned'),
@@ -72,8 +40,8 @@ REF_LINE_DEFS = [
     (30.437 * 3, '1 vask/3 mdr.'),
     (30.437 * 6, '1 vask/6 mdr.'),
 ]
-REF_COLORS    = ["#1e00ff", "#d0ff00", "#1e00ff", "#d0ff00", "#1e00ff"]
-REF_LINESTYLES = ['-', '-', '--', '--', '-.']
+REF_COLORS    = ["#00ffd5", "#0095ff", "#00ff00", "#3700ff", "#ffea00"]
+REF_LINESTYLES = ['-', '-', '-', '-', '-']
 SAVE_DIR         = 'Saved Histograms'
 DEFAULT_MAX_DAGE = int(8 * 365.25)
 DEFAULT_MAX_VASK = 250
@@ -118,6 +86,91 @@ def hr():
     line.setFrameShape(QFrame.HLine)
     line.setStyleSheet(f"color:{BORDER}; background:{BORDER}; max-height:1px;")
     return line
+
+
+# ── Loading screen ─────────────────────────────────────────────────────────────
+class LoadingScreen(QWidget):
+    """Animated splash screen shown while the app initialises."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(480, 280)
+
+        # Centre on screen
+        screen = QApplication.primaryScreen().geometry()
+        self.move(
+            (screen.width()  - self.width())  // 2,
+            (screen.height() - self.height()) // 2,
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(14)
+        layout.setAlignment(Qt.AlignCenter)
+
+        # App title
+        title = QLabel("2D Histogram")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(
+            f"color:{ACCENT}; font-size:26px; font-weight:bold; background:transparent;"
+        )
+        layout.addWidget(title)
+
+        subtitle = QLabel("Produktcirkulation")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setStyleSheet(
+            f"color:{SUBTEXT}; font-size:13px; background:transparent;"
+        )
+        layout.addWidget(subtitle)
+
+        layout.addSpacing(10)
+
+        # Dot animation row
+        dot_row = QHBoxLayout()
+        dot_row.setAlignment(Qt.AlignCenter)
+        dot_row.setSpacing(10)
+        self._dots = []
+        for _ in range(5):
+            dot = QLabel("●")
+            dot.setAlignment(Qt.AlignCenter)
+            dot.setStyleSheet(f"color:{BORDER}; font-size:14px; background:transparent;")
+            dot_row.addWidget(dot)
+            self._dots.append(dot)
+        layout.addLayout(dot_row)
+
+        # Status label
+        self._status = QLabel("Indlæser…")
+        self._status.setAlignment(Qt.AlignCenter)
+        self._status.setStyleSheet(
+            f"color:{SUBTEXT}; font-size:11px; background:transparent;"
+        )
+        layout.addWidget(self._status)
+
+        # Animate dots
+        self._dot_idx = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(120)
+
+    def set_status(self, text):
+        self._status.setText(text)
+
+    def _tick(self):
+        for i, dot in enumerate(self._dots):
+            if i == self._dot_idx:
+                dot.setStyleSheet(f"color:{ACCENT}; font-size:16px; font-weight:bold; background:transparent;")
+            else:
+                dot.setStyleSheet(f"color:{BORDER}; font-size:14px; background:transparent;")
+        self._dot_idx = (self._dot_idx + 1) % len(self._dots)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QColor(PANEL_BG))
+        painter.setPen(QColor(ACCENT))
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 16, 16)
 
 
 # ── Plot canvas ────────────────────────────────────────────────────────────────
@@ -1206,8 +1259,83 @@ def main():
     palette.setColor(QPalette.HighlightedText, QColor(DARK_BG))
     app.setPalette(palette)
 
-    win = MainWindow()
-    win.show()
+    splash = LoadingScreen()
+    splash.show()
+    app.processEvents()
+
+    def step1_data():
+        splash.set_status("Indlæser data…")
+        app.processEvents()
+        global DEMO_MODE
+        global samlet_df, skjorte_data, shorts_data, bukse_data, tshirt_data
+        global langærmet_data, jakke_data, fleece_data, overall_data
+        global forklæde_data, kittel_data, busseron_data, kokkejakke_data, andre_data
+
+        try:
+            from dataloader import samlet_df as _s
+            from dataloader import (
+                skjorte_data as _sk, shorts_data as _sh, bukse_data as _bu,
+                tshirt_data as _ts, langærmet_data as _la, jakke_data as _ja,
+                fleece_data as _fl, overall_data as _ov, forklæde_data as _fo,
+                kittel_data as _ki, busseron_data as _bs,
+                kokkejakke_data as _ko, andre_data as _an,
+            )
+            samlet_df = _s; skjorte_data = _sk; shorts_data = _sh
+            bukse_data = _bu; tshirt_data = _ts; langærmet_data = _la
+            jakke_data = _ja; fleece_data = _fl; overall_data = _ov
+            forklæde_data = _fo; kittel_data = _ki; busseron_data = _bs
+            kokkejakke_data = _ko; andre_data = _an
+            DEMO_MODE = False
+        except ImportError:
+            import pandas as pd
+            print("⚠  dataloader not found — running in DEMO mode with synthetic data.")
+            DEMO_MODE = True
+            rng = np.random.default_rng(42)
+            def _make_df(n=3000):
+                dage    = rng.integers(30, 2800, n)
+                vask    = (dage / 365.25 * rng.uniform(10, 60, n)).astype(int)
+                ratio   = vask / (dage / 30.437)
+                årsager = rng.choice(['Slidt', 'Beskadiget', 'Forældet', 'Andet'], n)
+                return pd.DataFrame({'Dage i cirkulation': dage,
+                                     'Total antal vask':   vask,
+                                     'Vask per måned':     ratio,
+                                     'Kassationsårsag (ui)': årsager})
+            samlet_df      = _make_df(8000)
+            skjorte_data   = _make_df(1200); shorts_data     = _make_df(800)
+            bukse_data     = _make_df(900);  tshirt_data     = _make_df(1100)
+            langærmet_data = _make_df(600);  jakke_data      = _make_df(500)
+            fleece_data    = _make_df(400);  overall_data    = _make_df(300)
+            forklæde_data  = _make_df(350);  kittel_data     = _make_df(450)
+            busseron_data  = _make_df(250);  kokkejakke_data = _make_df(200)
+            andre_data     = _make_df(700)
+
+        DATASET_MAP.update({
+            'Samlet':    samlet_df,      'Skjorte':    skjorte_data,
+            'Shorts':    shorts_data,    'Bukser':     bukse_data,
+            'T-shirt':   tshirt_data,    'Langærmet':  langærmet_data,
+            'Jakke':     jakke_data,     'Fleece':     fleece_data,
+            'Forklæde':  forklæde_data,  'Kittel':     kittel_data,
+            'Busseron':  busseron_data,  'Kokkejakke': kokkejakke_data,
+            'Overall':   overall_data,   'Andet':      andre_data,
+        })
+        QTimer.singleShot(0, step2_build)
+
+    def step2_build():
+        splash.set_status("Bygger brugerfladen…")
+        app.processEvents()
+        win = MainWindow()
+        app._main_win = win
+        splash.set_status("Klar!")
+        app.processEvents()
+        QTimer.singleShot(350, lambda: _show(win))
+
+    def _show(win):
+        splash.close()
+        win.show()
+
+    # Kick off after the splash has fully painted
+    QTimer.singleShot(50, step1_data)
+
     sys.exit(app.exec_())
 
 
