@@ -73,7 +73,7 @@ REF_LINE_DEFS = [
     (30.437 * 3, '1 vask/3 mdr.'),
     (30.437 * 6, '1 vask/6 mdr.'),
 ]
-REF_COLORS    = ["#0044ff", "#228b22", "#0044ff", "#228b22", "#0044ff"] # Justeret til lyseffekt
+REF_COLORS    = ["#0044ff", "#228b22", "#0044ff", "#228b22", "#0044ff"] 
 REF_LINESTYLES = ['-', '-', '--', '--', '-.']
 SAVE_DIR         = 'Saved Histograms'
 DEFAULT_MAX_DAGE = int(8 * 365.25)
@@ -81,16 +81,16 @@ DEFAULT_MAX_VASK = 250
 RATIO_COL        = 'Vask per måned'
 
 # --- LYST TEMA FARVER ---
-LIGHT_BG  = "#ffffff"      # Hovedbaggrund
-PANEL_BG  = "#f4f6f8"      # Let grålig panel baggrund
-INPUT_BG  = "#ffffff"      # Hvid baggrund til dropdowns og inputs
-ACCENT    = "#2980b9"      # En flot professionel blå
-TEXT      = "#2c3e50"      # Mørkegrå/næsten sort tekst
-SUBTEXT   = "#555555"      # Mellemgrå tekst til akser etc.
-BORDER    = "#bdc3c7"      # Lysegrå borders
-SUCCESS   = "#27ae60"      # Grøn
-DANGER    = "#c0392b"      # Rød
-INFO      = "#2980b9"      # Blå
+LIGHT_BG  = "#ffffff"      
+PANEL_BG  = "#f4f6f8"      
+INPUT_BG  = "#ffffff"      
+ACCENT    = "#2980b9"      
+TEXT      = "#2c3e50"      
+SUBTEXT   = "#555555"      
+BORDER    = "#bdc3c7"      
+SUCCESS   = "#27ae60"      
+DANGER    = "#c0392b"      
+INFO      = "#2980b9"      
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -135,7 +135,9 @@ class PlotCanvas(FigureCanvas):
                        min_vask, max_vask, x_skala, datasæt_navn='', total=None,
                        log_color=True, ref_lines=None, vmin=0.1,
                        min_ratio=None, max_ratio=None, show_percentiles=None,
-                       plot_type='Begge', smooth=15, log_y_hist=False, show_regression=True):
+                       plot_type='Begge', smooth=15, log_y_hist=False, show_regression=True,
+                       show_ssi_reg=True, show_ssi_exp=True, show_ssi_2z=True, 
+                       show_ssi_4z=True, show_ssi_fill=True, show_surv=True, show_year_lines=True):
         self.fig.clear()
 
         kd = data if kassationsårsag == 'Alle' else data[data['Kassationsårsag (ui)'] == kassationsårsag]
@@ -157,17 +159,20 @@ class PlotCanvas(FigureCanvas):
         cmap = copy.copy(matplotlib.colormaps['Reds'])
         cmap.set_bad(LIGHT_BG); cmap.set_under(LIGHT_BG)
         
-        # Sæt tekstfarve generelt til plottet (Lyst tema)
+        # MARKANT STØRRE SKRIFTSTØRRELSER
         matplotlib.rcParams['text.color'] = TEXT
         matplotlib.rcParams['axes.labelcolor'] = TEXT
         matplotlib.rcParams['xtick.color'] = SUBTEXT
         matplotlib.rcParams['ytick.color'] = SUBTEXT
+        matplotlib.rcParams['axes.labelsize'] = 14  # Aksetitler
+        matplotlib.rcParams['xtick.labelsize'] = 12 # Tal på akser
+        matplotlib.rcParams['ytick.labelsize'] = 12 # Tal på akser
 
         if len(kd) == 0:
             ax = self.fig.add_subplot(111, facecolor=LIGHT_BG)
             ax.text(0.5, 0.5, 'Ingen data i det valgte interval',
                     ha='center', va='center', transform=ax.transAxes,
-                    fontsize=13, color=SUBTEXT)
+                    fontsize=14, color=SUBTEXT)
             for spine in ax.spines.values(): spine.set_edgecolor(BORDER)
             self.draw()
             return kd
@@ -176,7 +181,6 @@ class PlotCanvas(FigureCanvas):
         x_data = x_data_raw / div
         y_data = kd['Total antal vask'].dropna().values
 
-        # Linear regression calculation
         stats_text = ""
         slope, intercept = 0, 0
         can_regress = len(np.unique(x_data)) > 1
@@ -193,12 +197,11 @@ class PlotCanvas(FigureCanvas):
                 f"R²: {r_value**2:.3f}"
             )
 
-        # Setup Axes based on Plot Type
         ax = None
         ax_hist = None
         
         if plot_type == 'Begge':
-            gs = self.fig.add_gridspec(2, 1, height_ratios=[2.2, 1.3], hspace=0.15)
+            gs = self.fig.add_gridspec(2, 1, height_ratios=[2.2, 1.3], hspace=0.25)
             ax = self.fig.add_subplot(gs[0], facecolor=LIGHT_BG)
             ax_hist = self.fig.add_subplot(gs[1], facecolor=LIGHT_BG, sharex=ax)
         elif plot_type == '2D Histogram':
@@ -229,7 +232,7 @@ class PlotCanvas(FigureCanvas):
                                 color=REF_COLORS[i], lw=1.5, ls=REF_LINESTYLES[i], label=lbl, alpha=0.9)
             
             if ref_lines or (show_regression and can_regress):
-                ax.legend(fontsize=8, loc='upper left', facecolor=LIGHT_BG, edgecolor=BORDER, labelcolor=TEXT)
+                ax.legend(fontsize=10, loc='upper left', facecolor=LIGHT_BG, edgecolor=BORDER, labelcolor=TEXT)
 
             if show_percentiles:
                 col = kd['Dage i cirkulation']
@@ -244,14 +247,14 @@ class PlotCanvas(FigureCanvas):
                     if x_min < vx < x_max:
                         ax.axvline(vx, color=SUBTEXT, lw=1.5, ls=ls, alpha=0.7)
                         ax.text(vx, max_vask * y_frac, f'{label}\n{val/365.25:.1f} år',
-                                color=TEXT, fontsize=8, ha='center', va='top',
+                                color=TEXT, fontsize=10, ha='center', va='top',
                                 bbox=dict(boxstyle='round,pad=0.2', fc=LIGHT_BG, alpha=0.8, ec=BORDER))
 
             title = f'{datasæt_navn} — {kassationsårsag}' if datasæt_navn else kassationsårsag
             pct_str = f'  ({100*len(kd)/total:.1f}% af datasæt)' if total else ''
-            ax.set_title(f'{title}\n{len(kd)} produkter{pct_str}', color=TEXT, fontsize=11)
-            ax.set_ylabel('Total antal vask', color=TEXT)
-            if ax_hist is None: ax.set_xlabel(xlabel, color=TEXT)
+            ax.set_title(f'{title}\n{len(kd)} produkter{pct_str}', color=TEXT, fontsize=14, fontweight='bold')
+            ax.set_ylabel('Total antal vask', color=TEXT, fontsize=14, fontweight='bold')
+            if ax_hist is None: ax.set_xlabel(xlabel, color=TEXT, fontsize=14, fontweight='bold')
             ax.set_xlim(x_min, x_max); ax.set_ylim(min_vask, max_vask)
             for spine in ax.spines.values(): spine.set_edgecolor(BORDER)
 
@@ -274,64 +277,68 @@ class PlotCanvas(FigureCanvas):
             ])
             std = np.where(std < 1e-9, 1e-9, std)
 
-            ax_hist.plot(x_hist_vals, baseline + 4*std, color='#c0392b', lw=1.4, ls='-.', alpha=0.85, label='4 z-score')
-            ax_hist.plot(x_hist_vals, baseline + 2*std, color='#e74c3c', lw=1.4, ls='--', alpha=0.85, label='2 z-score')
-            ax_hist.plot(x_hist_vals, baseline, color='#3498db', lw=2.2, label='Forventet')
-            ax_hist.plot(x_hist_vals, counts, color='#2c3e50', lw=1.8, alpha=0.92, label='Registreret')
+            if show_ssi_4z: ax_hist.plot(x_hist_vals, baseline + 4*std, color='#c0392b', lw=1.4, ls='-.', alpha=0.85, label='4 z-score')
+            if show_ssi_2z: ax_hist.plot(x_hist_vals, baseline + 2*std, color='#e74c3c', lw=1.4, ls='--', alpha=0.85, label='2 z-score')
+            if show_ssi_exp: ax_hist.plot(x_hist_vals, baseline, color='#3498db', lw=2.2, label='Forventet')
+            if show_ssi_reg: ax_hist.plot(x_hist_vals, counts, color='#2c3e50', lw=1.8, alpha=0.92, label='Registreret')
 
             over2 = counts > (baseline + 2*std)
-            if over2.any():
+            if show_ssi_fill and over2.any():
                 ax_hist.fill_between(x_hist_vals, baseline + 2*std, counts, where=over2, alpha=0.3, color='#e67e22', label='Over tærskel')
 
-            ax_hist.set_ylabel('Antal kasseret', color='#2c3e50')
+            ax_hist.set_ylabel('Antal kasseret', color='#2c3e50', fontsize=14, fontweight='bold')
             ax_hist.tick_params(axis='y', labelcolor='#2c3e50')
             
             if ax is None:
                 title = f'{datasæt_navn} — {kassationsårsag}' if datasæt_navn else kassationsårsag
                 pct_str = f'  ({100*len(kd)/total:.1f}% af datasæt)' if total else ''
-                ax_hist.set_title(f'{title}\n{len(kd)} produkter{pct_str}\nKassations-profil (Overdødelighed)', color=TEXT, fontsize=11)
+                ax_hist.set_title(f'{title}\n{len(kd)} produkter{pct_str}\nKassations-profil (Overdødelighed)', color=TEXT, fontsize=14, fontweight='bold')
             else:
-                ax_hist.set_title('Kassations-profil (Overdødelighed)', color=TEXT, fontsize=10, pad=8)
+                ax_hist.set_title('Kassations-profil (Overdødelighed)', color=TEXT, fontsize=13, fontweight='bold', pad=10)
             
             if log_y_hist: ax_hist.set_yscale('log')
 
-            ax_surv = ax_hist.twinx()
-            x_sorted = np.sort(x_data)
-            survival_prob = 100 * (1 - np.arange(1, len(x_sorted) + 1) / len(x_sorted))
-            ax_surv.plot(x_sorted, survival_prob, color='#27ae60', lw=2.0, label='Overlevelse (%)')
-            ax_surv.set_ylabel('Overlevelse (%)', color='#27ae60')
-            ax_surv.tick_params(axis='y', labelcolor='#27ae60')
-            ax_surv.set_ylim(0, 105)
-            for spine in ax_surv.spines.values(): spine.set_edgecolor(BORDER)
+            ax_surv = None
+            if show_surv:
+                ax_surv = ax_hist.twinx()
+                x_sorted = np.sort(x_data)
+                survival_prob = 100 * (1 - np.arange(1, len(x_sorted) + 1) / len(x_sorted))
+                ax_surv.plot(x_sorted, survival_prob, color='#27ae60', lw=2.0, label='Overlevelse (%)')
+                ax_surv.set_ylabel('Overlevelse (%)', color='#27ae60', fontsize=14, fontweight='bold')
+                ax_surv.tick_params(axis='y', labelcolor='#27ae60')
+                ax_surv.set_ylim(0, 105)
+                for spine in ax_surv.spines.values(): spine.set_edgecolor(BORDER)
             
-            lines_1, labels_1 = ax_hist.get_legend_handles_labels()
-            lines_2, labels_2 = ax_surv.get_legend_handles_labels()
-            ax_hist.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', fontsize=8, facecolor=LIGHT_BG, edgecolor=BORDER, labelcolor=TEXT, ncol=2)
+            lines_1, labels_1 = ax_hist.get_legend_handles_labels() if ax_hist else ([], [])
+            lines_2, labels_2 = ax_surv.get_legend_handles_labels() if ax_surv else ([], [])
+            if lines_1 or lines_2:
+                ax_hist.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', fontsize=10, facecolor=LIGHT_BG, edgecolor=BORDER, labelcolor=TEXT, ncol=2)
 
-            for y in range(1, 15):
-                v = y * 365.25 / div if x_skala == 'Dage' else (y * 12 if x_skala == 'Måneder' else y)
-                if x_min < v < x_max:
-                    is_target = (y == 4 or y == 6)
-                    lw = 1.5 if is_target else 0.8
-                    alpha = 0.8 if is_target else 0.3
-                    color = '#8e44ad' if is_target else SUBTEXT
-                    ax_hist.axvline(v, color=color, linestyle='--', lw=lw, alpha=alpha)
-                    if is_target:
-                        ax_hist.text(v, ax_hist.get_ylim()[1]*0.8, f' {y} år ', color=color, fontsize=9, fontweight='bold', va='bottom', ha='right', rotation=90)
+            if show_year_lines:
+                for y in range(1, 15):
+                    v = y * 365.25 / div if x_skala == 'Dage' else (y * 12 if x_skala == 'Måneder' else y)
+                    if x_min < v < x_max:
+                        is_target = (y == 4 or y == 6)
+                        lw = 1.5 if is_target else 0.8
+                        alpha = 0.8 if is_target else 0.3
+                        color = '#8e44ad' if is_target else SUBTEXT
+                        ax_hist.axvline(v, color=color, linestyle='--', lw=lw, alpha=alpha)
+                        if is_target:
+                            ax_hist.text(v, ax_hist.get_ylim()[1]*0.8, f' {y} år ', color=color, fontsize=11, fontweight='bold', va='bottom', ha='right', rotation=90)
 
-            ax_hist.set_xlabel(xlabel, color=TEXT)
+            ax_hist.set_xlabel(xlabel, color=TEXT, fontsize=14, fontweight='bold')
             ax_hist.set_xlim(x_min, x_max)
             ax_hist.grid(True, alpha=0.4, linestyle='--')
             for spine in ax_hist.spines.values(): spine.set_edgecolor(BORDER)
 
         if show_regression and can_regress:
-            self.fig.text(0.5, 0.01, stats_text, ha='center', va='bottom', fontsize=9, color=TEXT, 
+            self.fig.text(0.5, 0.01, stats_text, ha='center', va='bottom', fontsize=11, color=TEXT, 
                           bbox=dict(facecolor=PANEL_BG, edgecolor=BORDER, boxstyle='round,pad=0.4'))
-            self.fig.subplots_adjust(bottom=0.12) # Gør plads til teksten
+            self.fig.subplots_adjust(bottom=0.14)
 
         self.fig.tight_layout()
         if show_regression and can_regress:
-            self.fig.subplots_adjust(bottom=0.12)
+            self.fig.subplots_adjust(bottom=0.14)
             
         self.draw()
         return kd
@@ -358,11 +365,9 @@ class ControlPanel(QScrollArea):
         layout.setSpacing(6)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # Title
         layout.addWidget(styled_label(f"Graf {letter} — Indstillinger", bold=True, size=12, color=ACCENT))
         layout.addWidget(hr())
 
-        # ── Load/Save section ─────────────────────────────────────────
         layout.addWidget(styled_label("📂 Indlæs / Slet", bold=True, color=INFO))
         self.load_combo = QComboBox()
         self._style_combo(self.load_combo)
@@ -377,7 +382,6 @@ class ControlPanel(QScrollArea):
         layout.addWidget(self.io_label)
         layout.addWidget(hr())
 
-        # ── Dataset ───────────────────────────────────────────────────
         layout.addWidget(styled_label("Datasæt", bold=True))
         self.ds_combo = QComboBox()
         self._style_combo(self.ds_combo)
@@ -390,7 +394,6 @@ class ControlPanel(QScrollArea):
         self._update_arsager()
         layout.addWidget(self.ar_combo)
         
-        # ── Graftype ──────────────────────────────────────────────────
         layout.addWidget(styled_label("Graftype", bold=True))
         self.plot_type_combo = QComboBox()
         self._style_combo(self.plot_type_combo)
@@ -399,7 +402,6 @@ class ControlPanel(QScrollArea):
         layout.addWidget(self.plot_type_combo)
         layout.addWidget(hr())
 
-        # ── Plot settings ─────────────────────────────────────────────
         layout.addWidget(styled_label("Bins", bold=True))
         self.bins_slider, bins_val = self._slider(60, 5, 150)
         row2 = QHBoxLayout(); row2.addWidget(self.bins_slider); row2.addWidget(bins_val)
@@ -434,7 +436,6 @@ class ControlPanel(QScrollArea):
         self.vmin_val_lbl = vmin_val
         layout.addWidget(hr())
 
-        # ── Note / Folder / Save ──────────────────────────────────────
         layout.addWidget(styled_label("Note (valgfrit)", bold=True))
         self.note_edit = QTextEdit()
         self.note_edit.setFixedHeight(60)
@@ -456,7 +457,6 @@ class ControlPanel(QScrollArea):
 
         self.setWidget(container)
 
-        # ── Connect signals ───────────────────────────────────────────
         self.ds_combo.currentTextChanged.connect(self._on_dataset_changed)
         self.ar_combo.currentTextChanged.connect(self.settings_changed)
         self.plot_type_combo.currentTextChanged.connect(self.settings_changed)
@@ -489,7 +489,6 @@ class ControlPanel(QScrollArea):
         layout.addWidget(styled_label(f"Graf {self.letter} — Filtrering", bold=True, size=12, color=ACCENT))
         layout.addWidget(hr())
 
-        # X-skala
         layout.addWidget(styled_label("X-akse skala", bold=True))
         skala_row = QHBoxLayout()
         self.skala_btns = {}
@@ -506,7 +505,6 @@ class ControlPanel(QScrollArea):
         self.skala_group.buttonClicked.connect(self._on_skala_changed)
         layout.addWidget(hr())
 
-        # Dage sliders
         df = DATASET_MAP[self.ds_combo.currentText()]
         dage_max = int(df['Dage i cirkulation'].max()) + 100
         self._dage_section_label = styled_label("Dage i cirkulation", bold=True)
@@ -529,7 +527,6 @@ class ControlPanel(QScrollArea):
         layout.addLayout(r2)
         layout.addWidget(hr())
 
-        # Vask sliders
         vask_max = int(df['Total antal vask'].max()) + 10
         layout.addWidget(styled_label("Total antal vask", bold=True))
 
@@ -547,7 +544,6 @@ class ControlPanel(QScrollArea):
         r4.addWidget(self.max_vask_edit)
         layout.addLayout(r4)
 
-        # Ratio sliders
         rmin, rmax = ratio_range(df)
         self.ratio_group = QGroupBox("Vask per måned (ratio)")
         self.ratio_group.setStyleSheet(f"""
@@ -576,7 +572,7 @@ class ControlPanel(QScrollArea):
 
         layout.addWidget(hr())
 
-        # ── Reference lines ───────────────────────────────────────────
+        # ── Referencelinjer ───────────────────────────────────────────
         layout.addWidget(styled_label("Referencelinjer (2D Plot)", bold=True))
         self.ref_cbs = {}
         for i, (_, lbl) in enumerate(REF_LINE_DEFS):
@@ -588,7 +584,7 @@ class ControlPanel(QScrollArea):
 
         layout.addWidget(hr())
 
-        # ── Percentile lines ──────────────────────────────────────────
+        # ── Kvantillinjer ──────────────────────────────────────────
         layout.addWidget(styled_label("Kvantillinjer (2D Plot)", bold=True))
         self.pct_cbs = {}
         for lbl in ['25%', 'Median', '75%']:
@@ -597,6 +593,23 @@ class ControlPanel(QScrollArea):
             cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
             cb.stateChanged.connect(self.settings_changed)
             self.pct_cbs[lbl] = cb
+            layout.addWidget(cb)
+
+        layout.addWidget(hr())
+
+        # ── Overdødelighed linjer ──────────────────────────────────────
+        layout.addWidget(styled_label("Overdødelighed lag", bold=True))
+        self.ssi_cbs = {}
+        for lbl, key in [('Registreret', 'show_ssi_reg'), ('Forventet', 'show_ssi_exp'),
+                         ('2 z-score', 'show_ssi_2z'), ('4 z-score', 'show_ssi_4z'),
+                         ('Over tærskel (farve)', 'show_ssi_fill'), 
+                         ('Overlevelseskurve', 'show_surv'),
+                         ('Årlige markører (4 & 6 år)', 'show_year_lines')]:
+            cb = QCheckBox(lbl)
+            cb.setChecked(True)
+            cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+            cb.stateChanged.connect(self.settings_changed)
+            self.ssi_cbs[key] = cb
             layout.addWidget(cb)
 
         layout.addWidget(hr())
@@ -624,7 +637,8 @@ class ControlPanel(QScrollArea):
             ("Antal vask",           ['min_vask', 'max_vask']),
             ("Vask per måned ratio", ['min_ratio', 'max_ratio']),
             ("Graftype & Bins",      ['plot_type', 'bins', 'smooth']),
-            ("Farveskala & Linjer",  ['log_color', 'vmin', 'log_y_hist', 'show_reg', 'ref_lines', 'show_percentiles']),
+            ("Farveskala & Linjer",  ['log_color', 'vmin', 'log_y_hist', 'show_reg', 'ref_lines', 'show_percentiles',
+                                      'show_ssi_reg', 'show_ssi_exp', 'show_ssi_2z', 'show_ssi_4z', 'show_ssi_fill', 'show_surv', 'show_year_lines']),
         ]
         self._sync_key_map = SYNC_GROUPS
         for label, _ in SYNC_GROUPS:
@@ -645,7 +659,6 @@ class ControlPanel(QScrollArea):
         panel.setWidget(container)
         self.filter_panel = panel
 
-        # ── Wire slider → edit ────────────────────────────────────────
         self.min_dage_slider.valueChanged.connect(self._sync_dage_slider_to_edit)
         self.max_dage_slider.valueChanged.connect(self._sync_dage_slider_to_edit)
         self.min_vask_slider.valueChanged.connect(lambda v: self._sync_int_slider_to_edit(v, self.min_vask_edit))
@@ -653,7 +666,6 @@ class ControlPanel(QScrollArea):
         self.min_ratio_slider.valueChanged.connect(lambda v: self._sync_ratio_slider_to_edit(v, self.min_ratio_edit))
         self.max_ratio_slider.valueChanged.connect(lambda v: self._sync_ratio_slider_to_edit(v, self.max_ratio_edit))
 
-        # ── Wire edit → slider ────────────────────────────────────────
         self.min_dage_edit.editingFinished.connect(lambda: self._sync_dage_edit_to_slider(self.min_dage_edit, self.min_dage_slider))
         self.max_dage_edit.editingFinished.connect(lambda: self._sync_dage_edit_to_slider(self.max_dage_edit, self.max_dage_slider))
         self.min_vask_edit.editingFinished.connect(lambda: self._sync_int_edit_to_slider(self.min_vask_edit, self.min_vask_slider))
@@ -661,7 +673,6 @@ class ControlPanel(QScrollArea):
         self.min_ratio_edit.editingFinished.connect(lambda: self._sync_ratio_edit_to_slider(self.min_ratio_edit, self.min_ratio_slider))
         self.max_ratio_edit.editingFinished.connect(lambda: self._sync_ratio_edit_to_slider(self.max_ratio_edit, self.max_ratio_slider))
 
-        # ── Emit settings_changed on any slider move ──────────────────
         for sl in [self.min_dage_slider, self.max_dage_slider,
                    self.min_vask_slider, self.max_vask_slider,
                    self.min_ratio_slider, self.max_ratio_slider]:
@@ -833,6 +844,11 @@ class ControlPanel(QScrollArea):
             for lbl, cb in self.ref_cbs.items(): cb.setChecked(lbl in s['ref_lines'])
         if s.get('show_percentiles'):
             for lbl, cb in self.pct_cbs.items(): cb.setChecked(lbl in s['show_percentiles'])
+            
+        for key in ['show_ssi_reg', 'show_ssi_exp', 'show_ssi_2z', 'show_ssi_4z', 'show_ssi_fill', 'show_surv', 'show_year_lines']:
+            if s.get(key) is not None and key in self.ssi_cbs:
+                self.ssi_cbs[key].setChecked(s[key])
+                
         if s.get('min_ratio') is not None:
             self.min_ratio_slider.setValue(int(min(s['min_ratio'] * 100, self.min_ratio_slider.maximum())))
         if s.get('max_ratio') is not None:
@@ -874,6 +890,13 @@ class ControlPanel(QScrollArea):
             'vmin':            self.vmin_slider.value() / 10.0,
             'ref_lines':        [l for l, cb in self.ref_cbs.items() if cb.isChecked()],
             'show_percentiles': [l for l, cb in self.pct_cbs.items() if cb.isChecked()],
+            'show_ssi_reg':    self.ssi_cbs['show_ssi_reg'].isChecked(),
+            'show_ssi_exp':    self.ssi_cbs['show_ssi_exp'].isChecked(),
+            'show_ssi_2z':     self.ssi_cbs['show_ssi_2z'].isChecked(),
+            'show_ssi_4z':     self.ssi_cbs['show_ssi_4z'].isChecked(),
+            'show_ssi_fill':   self.ssi_cbs['show_ssi_fill'].isChecked(),
+            'show_surv':       self.ssi_cbs['show_surv'].isChecked(),
+            'show_year_lines': self.ssi_cbs['show_year_lines'].isChecked(),
             'x_skala':         skala,
             'min_dage':        self.min_dage_slider.value(),
             'max_dage':        self.max_dage_slider.value(),
@@ -995,7 +1018,14 @@ class PlotWidget(QWidget):
             plot_type=s['plot_type'],
             smooth=s['smooth'],
             log_y_hist=s['log_y_hist'],
-            show_regression=s['show_reg']
+            show_regression=s['show_reg'],
+            show_ssi_reg=s.get('show_ssi_reg', True),
+            show_ssi_exp=s.get('show_ssi_exp', True),
+            show_ssi_2z=s.get('show_ssi_2z', True),
+            show_ssi_4z=s.get('show_ssi_4z', True),
+            show_ssi_fill=s.get('show_ssi_fill', True),
+            show_surv=s.get('show_surv', True),
+            show_year_lines=s.get('show_year_lines', True)
         )
 
 
@@ -1222,6 +1252,12 @@ class DualGraphPanel(QWidget):
                     cb.setChecked(lbl in s.get('show_percentiles', []))
                     cb.blockSignals(False)
 
+            for key in ['show_ssi_reg', 'show_ssi_exp', 'show_ssi_2z', 'show_ssi_4z', 'show_ssi_fill', 'show_surv', 'show_year_lines']:
+                if key in keys and key in dest.ssi_cbs:
+                    dest.ssi_cbs[key].blockSignals(True)
+                    dest.ssi_cbs[key].setChecked(s[key])
+                    dest.ssi_cbs[key].blockSignals(False)
+
         finally:
             self._syncing = False
 
@@ -1350,7 +1386,6 @@ def main():
 
     win = MainWindow()
     win.show()
-    
     sys.exit(app.exec_())
 
 
