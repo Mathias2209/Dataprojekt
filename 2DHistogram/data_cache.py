@@ -133,16 +133,40 @@ def load_data(force_refresh: bool = False,
         _s("Klar!")
         return True
 
-    except ImportError:
-        # ── 3. Demo fallback ───────────────────────────────────────────────────
-        print("⚠  dataloader ikke fundet — kører i DEMO-tilstand.")
+    except ImportError as e:
+        # dataloader.py not found at all
+        print(f"⚠  dataloader ikke fundet ({e}) — kører i DEMO-tilstand.")
+        _s("DEMO-tilstand: genererer syntetisk data…")
+        _apply_frames(_make_demo_frames())
+        return False
+
+    except Exception as e:
+        # dataloader exists but crashed (bad file path, missing column, etc.)
+        import traceback
+        print("\n" + "="*60)
+        print("DATALOADER FEJL — dette er hvorfor du ser demo-data:")
+        print("="*60)
+        traceback.print_exc()
+        print("="*60 + "\n")
+        _s(f"Dataloader fejl: {type(e).__name__}: {e}")
+
+        # Give the user a moment to read the status before it disappears
+        import time
+        time.sleep(2)
+
         _s("DEMO-tilstand: genererer syntetisk data…")
         _apply_frames(_make_demo_frames())
         return False
 
 
 def invalidate_cache() -> None:
-    """Delete the cache file so it is rebuilt on next startup."""
+    """Delete the data cache and all Weibull model caches."""
     if os.path.isfile(CACHE_FILE):
         os.remove(CACHE_FILE)
-        print(f"✓ Cache slettet: {CACHE_FILE}")
+        print(f"✓ Data-cache slettet: {CACHE_FILE}")
+    # Also clear Weibull fits — they are tied to the data so must be rebuilt
+    try:
+        from weibull_cache import invalidate_weibull_cache
+        invalidate_weibull_cache()
+    except ImportError:
+        pass

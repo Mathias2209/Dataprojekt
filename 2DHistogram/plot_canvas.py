@@ -16,7 +16,9 @@ from PyQt5.QtWidgets import QSizePolicy
 from config import (
     DARK_BG, PANEL_BG, TEXT, SUBTEXT, BORDER, ACCENT, SUCCESS, INFO,
     SCALE_CONFIG, REF_LINE_DEFS, REF_COLORS, REF_LINESTYLES, RATIO_COL,
+    DATASET_MAP,
 )
+from weibull_cache import get_weibull_posterior, weibull_expected_counts
 
 
 class PlotCanvas(FigureCanvas):
@@ -138,10 +140,19 @@ class PlotCanvas(FigureCanvas):
 
         # ── Overdødelighed ────────────────────────────────────────────────────
         if ax_hist is not None:
+            # full_days: unfiltered days for this dataset+årsag — Weibull is
+            # always fitted on the full population, not the slider subset.
+            full_df   = DATASET_MAP.get(datasæt_navn)
+            full_days = (
+                full_df['Dage i cirkulation'].dropna().values
+                if full_df is not None else x_data_raw
+            )
+            cache_key = f"{datasæt_navn}__{kassationsårsag}".replace(' ', '_')
             self._draw_overdødelighed(ax_hist, x_data_raw, x_data, x_min, x_max,
-                                       min_dage, max_dage, div, bins, smooth,
+                                       min_dage, max_dage, div, bins,
                                        log_y_hist, xlabel, ax,
-                                       datasæt_navn, kassationsårsag, total, len(kd))
+                                       datasæt_navn, kassationsårsag, total, len(kd),
+                                       full_days, cache_key)
 
         # ── Regression footer text ────────────────────────────────────────────
         if show_regression and can_regress and ax is not None:
@@ -225,37 +236,70 @@ class PlotCanvas(FigureCanvas):
 
     def _draw_overdødelighed(self, ax_hist, x_data_raw, x_data,
                               x_min, x_max, min_dage, max_dage,
-                              div, bins, smooth, log_y_hist, xlabel, ax,
-                              datasæt_navn, kassationsårsag, total, n_kd):
+                              div, bins, log_y_hist, xlabel, ax,
+                              datasæt_navn, kassationsårsag, total, n_kd,
+                              full_days, cache_key):
 
         hist_bins   = np.linspace(min_dage, max_dage, bins + 1)
         counts, _   = np.histogram(x_data_raw, bins=hist_bins)
         bin_centers = (hist_bins[:-1] + hist_bins[1:]) / 2
         x_hist_vals = bin_centers / div
+        bin_width   = hist_bins[1] - hist_bins[0]   # always in days
 
-        sw       = max(1, min(smooth, len(counts)))
-        kernel   = np.ones(sw) / sw
-        baseline = np.convolve(counts.astype(float), kernel, mode='same')
-        half     = sw // 2
-        std      = np.array([
-            np.std(counts[max(0, i - half):min(len(counts), i + half + 1)], ddof=0)
-            for i in range(len(counts))
-        ])
-        std = np.where(std < 1e-9, 1e-9, std)
+        # ── Bayesian Weibull fit on the FULL unfiltered dataset ───────────────
+        # get_weibull_posterior() loads from cache if available, otherwise
+        # runs PyMC MCMC (draws=500, tune=500, chains=2) and caches result.
+        posterior = get_weibull_posterior(full_days, cache_key)
+        alpha_samples = posterior['alpha_samples']
+        beta_samples  = posterior['beta_samples']
 
-        ax_hist.plot(x_hist_vals, baseline + 4 * std,
-                     color='#f38ba8', lw=1.4, ls='-.', alpha=0.85, label='4 z-score')
-        ax_hist.plot(x_hist_vals, baseline + 2 * std,
-                     color='#fab387', lw=1.4, ls='--', alpha=0.85, label='2 z-score')
+        # Scale the Weibull to the *filtered* count (n_kd), not the full n.
+        # This keeps the baseline proportional to what is actually shown.
+        curves = weibull_expected_counts(
+            alpha_samples, beta_samples,
+            bin_centers, bin_width,
+            n_total=len(x_data_raw),   # filtered n so curve matches histogram
+        )
+        baseline = np.where(curves['mean']  < 1e-9, 1e-9, curves['mean'])
+        lower    = np.where(curves['lower'] < 1e-9, 1e-9, curves['lower'])
+        upper    = curves['upper']
+
+        # ── Poisson uncertainty bands on top of Weibull credible band ─────────
+        # Combine two sources of uncertainty:
+        #   1. Parameter uncertainty  → 95 % credible band (shaded)
+        #   2. Poisson sampling noise → ±2σ and ±4σ lines above the mean
+        poisson_std = np.sqrt(baseline)
+
+        # 95 % posterior credible band (parameter uncertainty)
+        ax_hist.fill_between(x_hist_vals, lower, upper,
+                             alpha=0.20, color=INFO, label='95% kredibelt interval')
+
+        # Threshold lines (Poisson noise around the posterior mean)
+        ax_hist.plot(x_hist_vals, baseline + 4 * poisson_std,
+                     color='#f38ba8', lw=1.2, ls='-.', alpha=0.85, label='4σ')
+        ax_hist.plot(x_hist_vals, baseline + 2 * poisson_std,
+                     color='#fab387', lw=1.2, ls='--', alpha=0.85, label='2σ')
+
+        # Posterior mean Weibull baseline
+        alpha_mean = float(alpha_samples.mean())
+        beta_mean  = float(beta_samples.mean())
+        method_lbl = posterior.get('method', 'mcmc')
+        fit_lbl    = (f"Weibull MCMC  α={alpha_mean:.2f}, "
+                      f"β={beta_mean/div:.0f} {xlabel.split()[0].lower()}")
+        if method_lbl == 'mle_fallback':
+            fit_lbl = fit_lbl.replace('MCMC', 'MLE')
         ax_hist.plot(x_hist_vals, baseline,
-                     color=INFO, lw=2.2, label='Forventet')
+                     color=INFO, lw=2.2, label=fit_lbl)
+
+        # Observed counts
         ax_hist.plot(x_hist_vals, counts,
                      color=TEXT, lw=1.8, alpha=0.92, label='Registreret')
 
-        over2 = counts > (baseline + 2 * std)
+        # Yellow fill where observed exceeds 2σ threshold
+        over2 = counts > (baseline + 2 * poisson_std)
         if over2.any():
-            ax_hist.fill_between(x_hist_vals, baseline + 2 * std, counts,
-                                 where=over2, alpha=0.3,
+            ax_hist.fill_between(x_hist_vals, baseline + 2 * poisson_std, counts,
+                                 where=over2, alpha=0.30,
                                  color='#f9e2af', label='Over tærskel')
 
         ax_hist.set_ylabel('Antal kasseret', color=TEXT)
