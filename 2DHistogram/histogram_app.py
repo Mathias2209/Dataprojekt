@@ -145,22 +145,45 @@ def main() -> None:
     app.processEvents()
 
     def step1_data(force_refresh: bool = False) -> None:
+        # Progress map:
+        #   0%  → start
+        #  10%  → cache found / dataloader starting
+        #  70%  → data loaded, about to save cache
+        #  80%  → cache saved
+        #  90%  → building UI
+        # 100%  → done
+
+        def _progress_cb(msg: str) -> None:
+            """Route status messages to both the label and the progress bar."""
+            # Assign a percentage based on the message content
+            if 'cache' in msg.lower() and 'indlæser' in msg.lower():
+                splash.set_progress(10, msg)
+            elif 'første opstart' in msg.lower() or 'dataloader' in msg.lower():
+                splash.set_progress(10, msg)
+            elif 'demo' in msg.lower():
+                splash.set_progress(10, msg)
+            elif 'gemmer cache' in msg.lower():
+                splash.set_progress(70, msg)
+            elif 'cache gemt' in msg.lower() or 'cache indlæst' in msg.lower():
+                splash.set_progress(80, msg)
+            else:
+                splash.set_status(msg)
+
+        splash.set_progress(0, "Starter…")
         real_data = load_data(force_refresh=force_refresh,
-                              status_cb=splash.set_status)
+                              status_cb=_progress_cb)
         demo_mode = not real_data
         QTimer.singleShot(0, lambda: step2_build(demo_mode))
 
     def step2_build(demo_mode: bool) -> None:
-        splash.set_status("Bygger brugerfladen…")
-        app.processEvents()
+        splash.set_progress(90, "Bygger brugerfladen…")
 
         win = MainWindow(
             demo_mode=demo_mode,
             on_refresh=lambda: _do_refresh(win),
         )
         app._main_win = win
-        splash.set_status("Klar!")
-        app.processEvents()
+        splash.set_progress(100, "Klar!")
         QTimer.singleShot(350, lambda: _show(win))
 
     def _do_refresh(win: MainWindow) -> None:
