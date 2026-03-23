@@ -1,3 +1,6 @@
+# Kør denne fil for at generere trace.nc og ppc.nc lokalt
+# OBS: Tager ca. 15-45 minutter uden g++ compiler
+
 import pymc as pm
 from dataloader import samlet_df
 import numpy as np
