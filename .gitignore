@@ -1,3 +1,4 @@
 ppc.nc
 trace.nc
 *.pyc
+*.nc
