@@ -1,0 +1,28 @@
+{
+  "datasæt": "Overall",
+  "kassationsårsag": "Alle",
+  "plot_type": "Overdødelighed",
+  "bins": 60,
+  "smooth": 15,
+  "log_color": true,
+  "log_y_hist": false,
+  "show_reg": true,
+  "show_4sigma": true,
+  "show_2sigma": true,
+  "show_survival": true,
+  "vmin": 0.1,
+  "ref_lines": [],
+  "show_percentiles": [
+    "25%",
+    "Median",
+    "75%"
+  ],
+  "x_skala": "Dage",
+  "min_dage": 0,
+  "max_dage": 2922,
+  "min_vask": 0,
+  "max_vask": 243,
+  "min_ratio": 0.0,
+  "max_ratio": 4.59,
+  "gemt": "2026-03-25T12:57:59.641055"
+}

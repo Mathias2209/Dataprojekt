@@ -1,1 +1,5 @@
 dataloader.ipynb
+*.nc
+*.pyc
+*.pkl
+*.pkl
