@@ -28,11 +28,6 @@ WEIBULL_CACHE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'cache', 'weibull'
 )
 
-# Bump this integer whenever the cache format changes (e.g. new keys added).
-# A shared cache file whose version doesn't match will be ignored and refitted
-# rather than crashing — safe to share across machines and Python versions.
-_CACHE_FORMAT_VERSION = 1
-
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -75,13 +70,7 @@ def get_weibull_posterior(days_array: np.ndarray,
         try:
             with open(cache_path, 'rb') as f:
                 result = pickle.load(f)
-            if result.get('_cache_version') != _CACHE_FORMAT_VERSION:
-                print(f"Weibull cache version mismatch for '{cache_key}' "
-                      f"(got {result.get('_cache_version')!r}, "
-                      f"expected {_CACHE_FORMAT_VERSION}) — refitting.")
-                os.remove(cache_path)
-            else:
-                return result
+            return result
         except Exception as e:
             print(f"Weibull cache corrupt for '{cache_key}', refitting: {e}")
             os.remove(cache_path)
@@ -98,11 +87,10 @@ def get_weibull_posterior(days_array: np.ndarray,
         from scipy.stats import weibull_min
         alpha_fit, _, beta_fit = weibull_min.fit(data, floc=0)
         result = {
-            'alpha_samples':  np.full(200, alpha_fit),
-            'beta_samples':   np.full(200, beta_fit),
-            'method':         'mle_fallback',
-            'n':              len(data),
-            '_cache_version': _CACHE_FORMAT_VERSION,
+            'alpha_samples': np.full(200, alpha_fit),
+            'beta_samples':  np.full(200, beta_fit),
+            'method':        'mle_fallback',
+            'n':             len(data),
         }
         _save_cache(cache_path, result)
         return result
@@ -139,8 +127,8 @@ def get_weibull_posterior(days_array: np.ndarray,
 
             # Sample
             trace = pm.sample(
-                draws=100,
-                tune=100,
+                draws=50,
+                tune=50,
                 chains=2,
                 progressbar=False,   # no tqdm output in Qt
                 return_inferencedata=True,
@@ -150,15 +138,14 @@ def get_weibull_posterior(days_array: np.ndarray,
     beta_samples  = trace.posterior['beta'].values.flatten()
 
     result = {
-        'alpha_samples':  alpha_samples,
-        'beta_samples':   beta_samples,
-        'method':         'mcmc',
-        'n':              len(data),
-        'alpha_mean':     float(alpha_samples.mean()),
-        'beta_mean':      float(beta_samples.mean()),
-        'alpha_hdi':      _hdi(alpha_samples),
-        'beta_hdi':       _hdi(beta_samples),
-        '_cache_version': _CACHE_FORMAT_VERSION,
+        'alpha_samples': alpha_samples,
+        'beta_samples':  beta_samples,
+        'method':        'mcmc',
+        'n':             len(data),
+        'alpha_mean':    float(alpha_samples.mean()),
+        'beta_mean':     float(beta_samples.mean()),
+        'alpha_hdi':     _hdi(alpha_samples),
+        'beta_hdi':      _hdi(beta_samples),
     }
 
     _save_cache(cache_path, result)
@@ -229,9 +216,13 @@ def prefetch_all_weibull(status_cb=None, progress_cb=None) -> None:
             pending.append((ds_name, årsag, days, cache_key))
 
     if not pending:
+        # All models already cached — return immediately WITHOUT importing
+        # pymc or pytensor.  On Windows this avoids a slow C++ compilation
+        # check that happens on every pymc import even when no fitting is done.
         _p(90, "Alle Weibull-modeller er allerede cachet ✔")
         return
 
+    # Only reach here if at least one model needs fitting — now safe to import.
     n_total = len(pending)
     _s(f"Weibull MCMC: {n_total} modeller skal fittes (første opstart)…")
 
@@ -294,7 +285,10 @@ def weibull_expected_counts(alpha_samples: np.ndarray,
 def _save_cache(path: str, result: dict) -> None:
     try:
         with open(path, 'wb') as f:
-            pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
+            # Protocol 4 works on Python 3.8+ on all platforms (Windows/Mac/Linux).
+            # Avoid HIGHEST_PROTOCOL which can produce files unreadable on older
+            # Python versions when sharing cache files between machines.
+            pickle.dump(result, f, protocol=4)
         print(f"✓ Weibull cache gemt: {os.path.basename(path)}")
     except Exception as e:
         print(f"Weibull cache-skrivning fejlede: {e}")
