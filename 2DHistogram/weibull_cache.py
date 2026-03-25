@@ -28,15 +28,10 @@ WEIBULL_CACHE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'cache', 'weibull'
 )
 
-# Only pre-fit Weibull models for these kassationsårsager at startup.
-# Any other årsag will still get a model fitted on-demand when first viewed.
-WEIBULL_ÅRSAGER_WHITELIST = {
-    'Alm.slid uden restværdi',
-    'BTS fejl uden restværdi',
-    'Misligholdt med blæk',
-    'Misligholdt med restværdi',
-    'Udgået Model',
-}
+# Bump this integer whenever the cache format changes (e.g. new keys added).
+# A shared cache file whose version doesn't match will be ignored and refitted
+# rather than crashing — safe to share across machines and Python versions.
+_CACHE_FORMAT_VERSION = 1
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -80,7 +75,13 @@ def get_weibull_posterior(days_array: np.ndarray,
         try:
             with open(cache_path, 'rb') as f:
                 result = pickle.load(f)
-            return result
+            if result.get('_cache_version') != _CACHE_FORMAT_VERSION:
+                print(f"Weibull cache version mismatch for '{cache_key}' "
+                      f"(got {result.get('_cache_version')!r}, "
+                      f"expected {_CACHE_FORMAT_VERSION}) — refitting.")
+                os.remove(cache_path)
+            else:
+                return result
         except Exception as e:
             print(f"Weibull cache corrupt for '{cache_key}', refitting: {e}")
             os.remove(cache_path)
@@ -97,10 +98,11 @@ def get_weibull_posterior(days_array: np.ndarray,
         from scipy.stats import weibull_min
         alpha_fit, _, beta_fit = weibull_min.fit(data, floc=0)
         result = {
-            'alpha_samples': np.full(200, alpha_fit),
-            'beta_samples':  np.full(200, beta_fit),
-            'method':        'mle_fallback',
-            'n':             len(data),
+            'alpha_samples':  np.full(200, alpha_fit),
+            'beta_samples':   np.full(200, beta_fit),
+            'method':         'mle_fallback',
+            'n':              len(data),
+            '_cache_version': _CACHE_FORMAT_VERSION,
         }
         _save_cache(cache_path, result)
         return result
@@ -137,8 +139,8 @@ def get_weibull_posterior(days_array: np.ndarray,
 
             # Sample
             trace = pm.sample(
-                draws=500,
-                tune=500,
+                draws=100,
+                tune=100,
                 chains=2,
                 progressbar=False,   # no tqdm output in Qt
                 return_inferencedata=True,
@@ -148,14 +150,15 @@ def get_weibull_posterior(days_array: np.ndarray,
     beta_samples  = trace.posterior['beta'].values.flatten()
 
     result = {
-        'alpha_samples': alpha_samples,
-        'beta_samples':  beta_samples,
-        'method':        'mcmc',
-        'n':             len(data),
-        'alpha_mean':    float(alpha_samples.mean()),
-        'beta_mean':     float(beta_samples.mean()),
-        'alpha_hdi':     _hdi(alpha_samples),
-        'beta_hdi':      _hdi(beta_samples),
+        'alpha_samples':  alpha_samples,
+        'beta_samples':   beta_samples,
+        'method':         'mcmc',
+        'n':              len(data),
+        'alpha_mean':     float(alpha_samples.mean()),
+        'beta_mean':      float(beta_samples.mean()),
+        'alpha_hdi':      _hdi(alpha_samples),
+        'beta_hdi':       _hdi(beta_samples),
+        '_cache_version': _CACHE_FORMAT_VERSION,
     }
 
     _save_cache(cache_path, result)
@@ -208,11 +211,9 @@ def prefetch_all_weibull(status_cb=None, progress_cb=None) -> None:
         # "Alle" — whole dataset
         tasks.append((ds_name, 'Alle', days_all))
 
-        # One per whitelisted kassationsårsag
+        # One per kassationsårsag
         if 'Kassationsårsag (ui)' in df.columns:
             for årsag in sorted(df['Kassationsårsag (ui)'].dropna().unique()):
-                if årsag not in WEIBULL_ÅRSAGER_WHITELIST:
-                    continue
                 subset = df.loc[df['Kassationsårsag (ui)'] == årsag,
                                 'Dage i cirkulation'].dropna().values
                 tasks.append((ds_name, årsag, subset))
