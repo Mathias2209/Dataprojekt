@@ -60,4 +60,7 @@ class PlotWidget(QWidget):
             smooth            = s.get('smooth', 15),
             log_y_hist        = s.get('log_y_hist', False),
             show_regression   = s.get('show_reg', True),
+            show_4sigma       = s.get('show_4sigma', True),
+            show_2sigma       = s.get('show_2sigma', True),
+            show_survival     = s.get('show_survival', True),
         )

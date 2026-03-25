@@ -54,6 +54,9 @@ class PlotCanvas(FigureCanvas):
         smooth: int        = 15,
         log_y_hist: bool   = False,
         show_regression: bool = True,
+        show_4sigma: bool  = True,
+        show_2sigma: bool  = True,
+        show_survival: bool = True,
     ):
         """
         Render the histogram (and optionally the overdødelighed curve) into
@@ -152,7 +155,8 @@ class PlotCanvas(FigureCanvas):
                                        min_dage, max_dage, div, bins,
                                        log_y_hist, xlabel, ax,
                                        datasæt_navn, kassationsårsag, total, len(kd),
-                                       full_days, cache_key)
+                                       full_days, cache_key,
+                                       show_4sigma, show_2sigma, show_survival)
 
         # ── Regression footer text ────────────────────────────────────────────
         if show_regression and can_regress and ax is not None:
@@ -238,7 +242,8 @@ class PlotCanvas(FigureCanvas):
                               x_min, x_max, min_dage, max_dage,
                               div, bins, log_y_hist, xlabel, ax,
                               datasæt_navn, kassationsårsag, total, n_kd,
-                              full_days, cache_key):
+                              full_days, cache_key,
+                              show_4sigma=True, show_2sigma=True, show_survival=True):
 
         hist_bins   = np.linspace(min_dage, max_dage, bins + 1)
         counts, _   = np.histogram(x_data_raw, bins=hist_bins)
@@ -275,10 +280,12 @@ class PlotCanvas(FigureCanvas):
                              alpha=0.20, color=INFO, label='95% kredibelt interval')
 
         # Threshold lines (Poisson noise around the posterior mean)
-        ax_hist.plot(x_hist_vals, baseline + 4 * poisson_std,
-                     color='#f38ba8', lw=1.2, ls='-.', alpha=0.85, label='4σ')
-        ax_hist.plot(x_hist_vals, baseline + 2 * poisson_std,
-                     color='#fab387', lw=1.2, ls='--', alpha=0.85, label='2σ')
+        if show_4sigma:
+            ax_hist.plot(x_hist_vals, baseline + 4 * poisson_std,
+                         color='#f38ba8', lw=1.2, ls='-.', alpha=0.85, label='4σ')
+        if show_2sigma:
+            ax_hist.plot(x_hist_vals, baseline + 2 * poisson_std,
+                         color='#fab387', lw=1.2, ls='--', alpha=0.85, label='2σ')
 
         # Posterior mean Weibull baseline
         alpha_mean = float(alpha_samples.mean())
@@ -296,11 +303,12 @@ class PlotCanvas(FigureCanvas):
                      color=TEXT, lw=1.8, alpha=0.92, label='Registreret')
 
         # Yellow fill where observed exceeds 2σ threshold
-        over2 = counts > (baseline + 2 * poisson_std)
-        if over2.any():
-            ax_hist.fill_between(x_hist_vals, baseline + 2 * poisson_std, counts,
-                                 where=over2, alpha=0.30,
-                                 color='#f9e2af', label='Over tærskel')
+        if show_2sigma:
+            over2 = counts > (baseline + 2 * poisson_std)
+            if over2.any():
+                ax_hist.fill_between(x_hist_vals, baseline + 2 * poisson_std, counts,
+                                     where=over2, alpha=0.30,
+                                     color='#f9e2af', label='Over tærskel')
 
         ax_hist.set_ylabel('Antal kasseret', color=TEXT)
         ax_hist.tick_params(axis='y', labelcolor=TEXT)
@@ -321,43 +329,26 @@ class PlotCanvas(FigureCanvas):
         if log_y_hist:
             ax_hist.set_yscale('log')
 
-        # Survival curve (twin y-axis)
-        ax_surv       = ax_hist.twinx()
-        x_sorted      = np.sort(x_data)
-        survival_prob = 100 * (1 - np.arange(1, len(x_sorted) + 1) / len(x_sorted))
-        ax_surv.plot(x_sorted, survival_prob, color=SUCCESS, lw=2.0, label='Overlevelse (%)')
-        ax_surv.set_ylabel('Overlevelse (%)', color=SUCCESS)
-        ax_surv.tick_params(axis='y', labelcolor=SUCCESS)
-        ax_surv.set_ylim(0, 105)
-        for spine in ax_surv.spines.values():
-            spine.set_edgecolor(BORDER)
-
-        lines_1, labels_1 = ax_hist.get_legend_handles_labels()
-        lines_2, labels_2 = ax_surv.get_legend_handles_labels()
-        ax_hist.legend(lines_1 + lines_2, labels_1 + labels_2,
-                       loc='upper right', fontsize=8,
-                       facecolor=PANEL_BG, edgecolor=BORDER,
-                       labelcolor=TEXT, ncol=2)
-
-        # Year markers
-        for y in range(1, 15):
-            v = ((y * 365.25 / div) if x_hist_vals[0] < y * 365.25 / div
-                 else (y * 12 if x_hist_vals[0] < y * 12 else y))
-            v = (y * 365.25 / div if div == 1
-                 else y * 12 if div == 30.437
-                 else y)
-            if x_min < v < x_max:
-                is_target = (y == 4 or y == 6)
-                ax_hist.axvline(v,
-                                color=ACCENT if is_target else SUBTEXT,
-                                linestyle='--',
-                                lw=1.5 if is_target else 0.8,
-                                alpha=0.8 if is_target else 0.3)
-                if is_target:
-                    ax_hist.text(v, ax_hist.get_ylim()[1] * 0.8,
-                                 f' {y} år ', color=ACCENT,
-                                 fontsize=9, fontweight='bold',
-                                 va='bottom', ha='right', rotation=90)
+        # Survival curve (twin y-axis) — optional
+        if show_survival:
+            ax_surv       = ax_hist.twinx()
+            x_sorted      = np.sort(x_data)
+            survival_prob = 100 * (1 - np.arange(1, len(x_sorted) + 1) / len(x_sorted))
+            ax_surv.plot(x_sorted, survival_prob, color=SUCCESS, lw=2.0, label='Overlevelse (%)')
+            ax_surv.set_ylabel('Overlevelse (%)', color=SUCCESS)
+            ax_surv.tick_params(axis='y', labelcolor=SUCCESS)
+            ax_surv.set_ylim(0, 105)
+            for spine in ax_surv.spines.values():
+                spine.set_edgecolor(BORDER)
+            lines_1, labels_1 = ax_hist.get_legend_handles_labels()
+            lines_2, labels_2 = ax_surv.get_legend_handles_labels()
+            ax_hist.legend(lines_1 + lines_2, labels_1 + labels_2,
+                           loc='upper right', fontsize=8,
+                           facecolor=PANEL_BG, edgecolor=BORDER,
+                           labelcolor=TEXT, ncol=2)
+        else:
+            ax_hist.legend(loc='upper right', fontsize=8,
+                           facecolor=PANEL_BG, edgecolor=BORDER, labelcolor=TEXT)
 
         ax_hist.set_xlabel(xlabel, color=SUBTEXT)
         ax_hist.set_xlim(x_min, x_max)

@@ -166,6 +166,73 @@ def invalidate_weibull_cache() -> None:
         print(f"✓ Weibull cache slettet: {removed} fil(er)")
 
 
+def prefetch_all_weibull(status_cb=None, progress_cb=None) -> None:
+    """
+    Pre-fit Weibull models for every dataset × kassationsårsag combination
+    that does not already have a cache file.  Call this at startup after
+    data has been loaded into DATASET_MAP.
+
+    Parameters
+    ----------
+    status_cb    : callable(str)  — splash status label update
+    progress_cb  : callable(int, str)  — splash.set_progress(percent, msg)
+    """
+    from config import DATASET_MAP
+
+    def _s(msg):
+        if status_cb:
+            status_cb(msg)
+    def _p(pct, msg):
+        if progress_cb:
+            progress_cb(pct, msg)
+        elif status_cb:
+            status_cb(msg)
+
+    # Build the full list of (dataset_name, årsag, days_array) tuples
+    tasks = []
+    for ds_name, df in DATASET_MAP.items():
+        if df is None or 'Dage i cirkulation' not in df.columns:
+            continue
+        days_all = df['Dage i cirkulation'].dropna().values
+
+        # "Alle" — whole dataset
+        tasks.append((ds_name, 'Alle', days_all))
+
+        # One per kassationsårsag
+        if 'Kassationsårsag (ui)' in df.columns:
+            for årsag in sorted(df['Kassationsårsag (ui)'].dropna().unique()):
+                subset = df.loc[df['Kassationsårsag (ui)'] == årsag,
+                                'Dage i cirkulation'].dropna().values
+                tasks.append((ds_name, årsag, subset))
+
+    # Filter to only tasks that are not yet cached
+    pending = []
+    for ds_name, årsag, days in tasks:
+        cache_key = f"{ds_name}__{årsag}".replace(' ', '_')
+        safe_key  = "".join(c if c.isalnum() or c in '-_' else '_'
+                            for c in cache_key)
+        cache_path = os.path.join(WEIBULL_CACHE_DIR, f"{safe_key}.pkl")
+        if not os.path.isfile(cache_path):
+            pending.append((ds_name, årsag, days, cache_key))
+
+    if not pending:
+        _p(90, "Alle Weibull-modeller er allerede cachet ✔")
+        return
+
+    n_total = len(pending)
+    _s(f"Weibull MCMC: {n_total} modeller skal fittes (første opstart)…")
+
+    for i, (ds_name, årsag, days, cache_key) in enumerate(pending):
+        # Progress spans 80 → 90 % across all fits
+        pct = 80 + int(10 * i / n_total)
+        _p(pct, f"Weibull [{i+1}/{n_total}]: {ds_name} — {årsag}…")
+
+        # get_weibull_posterior handles caching internally
+        get_weibull_posterior(days, cache_key)
+
+    _p(90, f"Weibull MCMC færdig — {n_total} modeller cachet ✔")
+
+
 def weibull_expected_counts(alpha_samples: np.ndarray,
                              beta_samples: np.ndarray,
                              bin_centers: np.ndarray,

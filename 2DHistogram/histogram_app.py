@@ -28,6 +28,7 @@ from PyQt5.QtGui import QColor, QPalette
 
 from config import DARK_BG, PANEL_BG, ACCENT, TEXT, SUBTEXT, BORDER, DANGER, INFO
 from data_cache import load_data, invalidate_cache
+from weibull_cache import prefetch_all_weibull
 from loading_screen import LoadingScreen
 from widgets import styled_label, hr, top_btn, top_btn_style
 from panels import GraphPanel, DualGraphPanel
@@ -146,16 +147,16 @@ def main() -> None:
 
     def step1_data(force_refresh: bool = False) -> None:
         # Progress map:
-        #   0%  → start
-        #  10%  → cache found / dataloader starting
-        #  70%  → data loaded, about to save cache
-        #  80%  → cache saved
-        #  90%  → building UI
-        # 100%  → done
+        #   0%  →  start
+        #  10%  →  cache found / dataloader starting
+        #  70%  →  data loaded, about to save cache
+        #  80%  →  data cache saved/read — begin Weibull pre-fitting
+        # 80–90% → Weibull fits (spread across all combinations)
+        #  90%  →  all Weibull fits done — building UI
+        # 100%  →  ready
 
         def _progress_cb(msg: str) -> None:
-            """Route status messages to both the label and the progress bar."""
-            # Assign a percentage based on the message content
+            """Route data_cache status messages to the progress bar."""
             if 'cache' in msg.lower() and 'indlæser' in msg.lower():
                 splash.set_progress(10, msg)
             elif 'første opstart' in msg.lower() or 'dataloader' in msg.lower():
@@ -173,6 +174,15 @@ def main() -> None:
         real_data = load_data(force_refresh=force_refresh,
                               status_cb=_progress_cb)
         demo_mode = not real_data
+        QTimer.singleShot(0, lambda: step1b_weibull(demo_mode))
+
+    def step1b_weibull(demo_mode: bool) -> None:
+        """Pre-fit all Weibull models in the background before opening the UI."""
+        if not demo_mode:
+            prefetch_all_weibull(
+                status_cb=splash.set_status,
+                progress_cb=splash.set_progress,
+            )
         QTimer.singleShot(0, lambda: step2_build(demo_mode))
 
     def step2_build(demo_mode: bool) -> None:

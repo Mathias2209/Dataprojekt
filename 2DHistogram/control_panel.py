@@ -195,6 +195,7 @@ class ControlPanel(QScrollArea):
         self.log_cb.stateChanged.connect(self.settings_changed)
         self.log_y_cb.stateChanged.connect(self.settings_changed)
         self.show_reg_cb.stateChanged.connect(self.settings_changed)
+
         self.load_btn.clicked.connect(self._do_load)
         self.refresh_btn.clicked.connect(self._refresh_saved)
         self.delete_btn.clicked.connect(self._do_delete)
@@ -321,6 +322,29 @@ class ControlPanel(QScrollArea):
             cb.stateChanged.connect(self.settings_changed)
             self.pct_cbs[lbl] = cb
             layout.addWidget(cb)
+
+        layout.addWidget(hr())
+
+        # Overdødelighed toggles
+        layout.addWidget(styled_label("Overdødelighed — vis", bold=True))
+
+        self.show_4sigma_cb = QCheckBox("4σ-tærskel")
+        self.show_4sigma_cb.setChecked(True)
+        self.show_4sigma_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_4sigma_cb.stateChanged.connect(self.settings_changed)
+        layout.addWidget(self.show_4sigma_cb)
+
+        self.show_2sigma_cb = QCheckBox("2σ-tærskel")
+        self.show_2sigma_cb.setChecked(True)
+        self.show_2sigma_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_2sigma_cb.stateChanged.connect(self.settings_changed)
+        layout.addWidget(self.show_2sigma_cb)
+
+        self.show_survival_cb = QCheckBox("Overlevelseskurve")
+        self.show_survival_cb.setChecked(True)
+        self.show_survival_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_survival_cb.stateChanged.connect(self.settings_changed)
+        layout.addWidget(self.show_survival_cb)
 
         layout.addWidget(hr())
 
@@ -563,9 +587,12 @@ class ControlPanel(QScrollArea):
             self.min_vask_slider.setValue(min(s['min_vask'], self.min_vask_slider.maximum()))
         if s.get('max_vask') is not None:
             self.max_vask_slider.setValue(min(s['max_vask'], self.max_vask_slider.maximum()))
-        if s.get('log_color')  is not None: self.log_cb.setChecked(s['log_color'])
-        if s.get('log_y_hist') is not None: self.log_y_cb.setChecked(s['log_y_hist'])
-        if s.get('show_reg')   is not None: self.show_reg_cb.setChecked(s['show_reg'])
+        if s.get('log_color')   is not None: self.log_cb.setChecked(s['log_color'])
+        if s.get('log_y_hist')  is not None: self.log_y_cb.setChecked(s['log_y_hist'])
+        if s.get('show_reg')    is not None: self.show_reg_cb.setChecked(s['show_reg'])
+        if s.get('show_4sigma') is not None: self.show_4sigma_cb.setChecked(s['show_4sigma'])
+        if s.get('show_2sigma') is not None: self.show_2sigma_cb.setChecked(s['show_2sigma'])
+        if s.get('show_survival') is not None: self.show_survival_cb.setChecked(s['show_survival'])
         if s.get('vmin')       is not None: self.vmin_slider.setValue(int(s['vmin'] * 10))
         if s.get('ref_lines'):
             for lbl, cb in self.ref_cbs.items():
@@ -637,6 +664,9 @@ class ControlPanel(QScrollArea):
             'log_color':        self.log_cb.isChecked(),
             'log_y_hist':       self.log_y_cb.isChecked(),
             'show_reg':         self.show_reg_cb.isChecked(),
+            'show_4sigma':      self.show_4sigma_cb.isChecked(),
+            'show_2sigma':      self.show_2sigma_cb.isChecked(),
+            'show_survival':    self.show_survival_cb.isChecked(),
             'vmin':             self.vmin_slider.value() / 10.0,
             'ref_lines':        [l for l, cb in self.ref_cbs.items() if cb.isChecked()],
             'show_percentiles': [l for l, cb in self.pct_cbs.items() if cb.isChecked()],
