@@ -55,7 +55,7 @@ samlet_df = samlet_df[~samlet_df["Unik Kode (ui)"].isin(bad_ui_year)].copy()
 samlet_df = samlet_df[samlet_df["Stk. tøj per kassationsdato"] == 1]
 
 # Filter all cases where antal vaske is 0 or lager
-samlet_df = samlet_df[samlet_df["Total antal vask"] >= 0]
+samlet_df = samlet_df[samlet_df["Total antal vask"] >= 1]
 
 # Filter all cases where Dage i cirkulation is 1 or lager
 samlet_df = samlet_df[samlet_df["Dage i cirkulation"] >= 1]
