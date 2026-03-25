@@ -55,14 +55,16 @@ def weibull(df, draws = 500, tune = 500, chains = 2):
 
     return trace, ppc
 
-#gemme en lokal version af modellen på hele datasættet
-trace, ppc = weibull(samlet_df)
-az.to_netcdf(trace, 'trace.nc')
-az.to_netcdf(ppc, 'ppc.nc')
+if __name__ == '__main__':
+    #gemme en lokal version af modellen på hele datasættet
+    trace, ppc = weibull(samlet_df)
+    az.to_netcdf(trace, 'trace.nc')
+    az.to_netcdf(ppc, 'ppc.nc')
 
-#gemme en lokal version af modellen for hver kategori
-for kategori in samlet_df['Kategori'].unique():
-    df = samlet_df[samlet_df['Kategori']==kategori]
-    trace, ppc = weibull(df)
-    az.to_netcdf(trace, f'trace_{kategori}.nc')
-    az.to_netcdf(ppc, f'ppc_{kategori}.nc')
+    #gemme en lokal version af modellen for hver kategori
+    for kategori in samlet_df['Kategori'].unique():
+        df = samlet_df[samlet_df['Kategori']==kategori]
+        trace, ppc = weibull(df)
+        az.to_netcdf(trace, f'trace_{kategori}.nc')
+        az.to_netcdf(ppc, f'ppc_{kategori}.nc')
+
