@@ -28,6 +28,16 @@ WEIBULL_CACHE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'cache', 'weibull'
 )
 
+# Only pre-fit Weibull models for these kassationsårsager at startup.
+# Any other årsag will still get a model fitted on-demand when first viewed.
+WEIBULL_ÅRSAGER_WHITELIST = {
+    'Alm.slid uden restværdi',
+    'BTS fejl uden restværdi',
+    'Misligholdt med blæk',
+    'Misligholdt med restværdi',
+    'Udgået Model',
+}
+
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -198,9 +208,11 @@ def prefetch_all_weibull(status_cb=None, progress_cb=None) -> None:
         # "Alle" — whole dataset
         tasks.append((ds_name, 'Alle', days_all))
 
-        # One per kassationsårsag
+        # One per whitelisted kassationsårsag
         if 'Kassationsårsag (ui)' in df.columns:
             for årsag in sorted(df['Kassationsårsag (ui)'].dropna().unique()):
+                if årsag not in WEIBULL_ÅRSAGER_WHITELIST:
+                    continue
                 subset = df.loc[df['Kassationsårsag (ui)'] == årsag,
                                 'Dage i cirkulation'].dropna().values
                 tasks.append((ds_name, årsag, subset))
