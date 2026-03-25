@@ -28,56 +28,6 @@ WEIBULL_CACHE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'cache', 'weibull'
 )
 
-# ── Årsag normalisation ────────────────────────────────────────────────────────
-# Maps every known raw årsag string → a short stable ASCII cache key.
-# This ensures cache files generated on one machine load correctly on any other
-# machine regardless of minor spelling/capitalisation differences in the data.
-# Add new variants here if new export formats appear — never change existing keys
-# or existing cache files will become unreadable.
-
-_ÅRSAG_CANONICAL: dict = {
-    'alm.slid uden restværdi':                    'alm_slid',
-    'udgået model':                               'udgaaet_model',
-    'misligholdt med restværdi':                  'misligholdt_rest',
-    'bts fejl uden restværdi':                    'bts_fejl',
-    'misligeholdt pga blæk':                      'misligholdt_blaek',
-    'bortkommet med restværdi':                   'bortkommet',
-    'kass. af retur,minimu,afmeld':               'kass_retur',
-    'ødelagt af lommefyld uden restværdi':        'odelagt_lomme_uden',
-    'produktfejl':                                'produktfejl',
-    'beholdningsnedskrivning uden restværdi':     'beholdning_ned',
-    'videresalg til andre bts afdelinger':        'videresalg_bts',
-    'fejlopmærkning':                             'fejlopmaerkning',
-    'videresalg til kunder':                      'videresalg_kunder',
-    'ødelagt af lommefyld med restværdi':         'odelagt_lomme_med',
-    'videresalg med restværdi':                   'videresalg_rest',
-    'pool kasseret i batch uden restværdi':       'pool_batch',
-    # Special marker for the full dataset
-    'alle':                                       'alle',
-}
-
-
-def _normalise_årsag(årsag: str) -> str:
-    """Return a stable ASCII cache key for any årsag string."""
-    key = årsag.strip().lower()
-    if key in _ÅRSAG_CANONICAL:
-        return _ÅRSAG_CANONICAL[key]
-    # Fallback for unknown future variants — strip diacritics and spaces
-    return (key.replace('æ', 'ae').replace('ø', 'oe').replace('å', 'aa')
-               .replace(' ', '_').replace('.', '').replace(',', ''))
-
-
-# Only pre-fit Weibull models for these canonical årsager at startup.
-# Every other årsag is still fitted on-demand the first time a user selects it.
-WEIBULL_ÅRSAGER_WHITELIST = {
-    'alm_slid',
-    'udgaaet_model',
-    'misligholdt_rest',
-    'bts_fejl',
-    'misligholdt_blaek',
-    'alle',
-}
-
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -111,12 +61,7 @@ def get_weibull_posterior(days_array: np.ndarray,
 
     os.makedirs(WEIBULL_CACHE_DIR, exist_ok=True)
 
-    # Normalise the cache key so on-demand fits also produce portable filenames.
-    # cache_key is expected to be "DatasetName__årsag_raw" — we normalise the
-    # årsag part so the resulting filename matches what prefetch_all_weibull uses.
-    if '__' in cache_key:
-        ds_part, årsag_part = cache_key.split('__', 1)
-        cache_key = f"{ds_part}__{_normalise_årsag(årsag_part)}"
+    # Sanitise key for use as filename
     safe_key = "".join(c if c.isalnum() or c in '-_' else '_' for c in cache_key)
     cache_path = os.path.join(WEIBULL_CACHE_DIR, f"{safe_key}.pkl")
 
@@ -184,7 +129,7 @@ def get_weibull_posterior(days_array: np.ndarray,
             trace = pm.sample(
                 draws=500,
                 tune=500,
-                chains=2,
+                chains=4,
                 progressbar=False,   # no tqdm output in Qt
                 return_inferencedata=True,
             )
@@ -250,35 +195,34 @@ def prefetch_all_weibull(status_cb=None, progress_cb=None) -> None:
             continue
         days_all = df['Dage i cirkulation'].dropna().values
 
-        # "Alle" — whole dataset (canonical key: 'alle')
-        tasks.append((ds_name, 'Alle', 'alle', days_all))
+        # "Alle" — whole dataset
+        tasks.append((ds_name, 'Alle', days_all))
 
-        # One per kassationsårsag — normalise to a stable ASCII key so cache
-        # files are portable across machines and data export variants.
+        # One per kassationsårsag
         if 'Kassationsårsag (ui)' in df.columns:
             for årsag in sorted(df['Kassationsårsag (ui)'].dropna().unique()):
-                canonical = _normalise_årsag(årsag)
-                if canonical not in WEIBULL_ÅRSAGER_WHITELIST:
-                    continue
                 subset = df.loc[df['Kassationsårsag (ui)'] == årsag,
                                 'Dage i cirkulation'].dropna().values
-                tasks.append((ds_name, årsag, canonical, subset))
+                tasks.append((ds_name, årsag, subset))
 
-    # Filter to only tasks not yet cached — deduplicate in case two raw årsag
-    # strings normalise to the same canonical key.
+    # Filter to only tasks that are not yet cached
     pending = []
-    seen_keys = set()
-    for ds_name, årsag, canonical, days in tasks:
-        cache_key  = f"{ds_name}__{canonical}"
-        cache_path = os.path.join(WEIBULL_CACHE_DIR, f"{cache_key}.pkl")
-        if cache_key not in seen_keys and not os.path.isfile(cache_path):
-            seen_keys.add(cache_key)
+    for ds_name, årsag, days in tasks:
+        cache_key = f"{ds_name}__{årsag}".replace(' ', '_')
+        safe_key  = "".join(c if c.isalnum() or c in '-_' else '_'
+                            for c in cache_key)
+        cache_path = os.path.join(WEIBULL_CACHE_DIR, f"{safe_key}.pkl")
+        if not os.path.isfile(cache_path):
             pending.append((ds_name, årsag, days, cache_key))
 
     if not pending:
+        # All models already cached — return immediately WITHOUT importing
+        # pymc or pytensor.  On Windows this avoids a slow C++ compilation
+        # check that happens on every pymc import even when no fitting is done.
         _p(90, "Alle Weibull-modeller er allerede cachet ✔")
         return
 
+    # Only reach here if at least one model needs fitting — now safe to import.
     n_total = len(pending)
     _s(f"Weibull MCMC: {n_total} modeller skal fittes (første opstart)…")
 
@@ -341,7 +285,10 @@ def weibull_expected_counts(alpha_samples: np.ndarray,
 def _save_cache(path: str, result: dict) -> None:
     try:
         with open(path, 'wb') as f:
-            pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
+            # Protocol 4 works on Python 3.8+ on all platforms (Windows/Mac/Linux).
+            # Avoid HIGHEST_PROTOCOL which can produce files unreadable on older
+            # Python versions when sharing cache files between machines.
+            pickle.dump(result, f, protocol=4)
         print(f"✓ Weibull cache gemt: {os.path.basename(path)}")
     except Exception as e:
         print(f"Weibull cache-skrivning fejlede: {e}")

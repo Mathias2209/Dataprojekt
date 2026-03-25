@@ -1,0 +1,28 @@
+{
+  "datasæt": "T-shirt",
+  "kassationsårsag": "Alle",
+  "plot_type": "Begge",
+  "bins": 79,
+  "smooth": 2,
+  "log_color": true,
+  "log_y_hist": false,
+  "show_reg": true,
+  "show_4sigma": false,
+  "show_2sigma": true,
+  "show_survival": true,
+  "vmin": 0.1,
+  "ref_lines": [],
+  "show_percentiles": [
+    "25%",
+    "Median",
+    "75%"
+  ],
+  "x_skala": "År",
+  "min_dage": 0,
+  "max_dage": 2922,
+  "min_vask": 0,
+  "max_vask": 250,
+  "min_ratio": 0.0,
+  "max_ratio": 4.51,
+  "gemt": "2026-03-25T12:49:42.787413"
+}
