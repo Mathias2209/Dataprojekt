@@ -183,7 +183,7 @@ class DualGraphPanel(QWidget):
                 dest.skala_btns[s['x_skala']].setChecked(True)
                 for b in dest.skala_btns.values():
                     b.setStyleSheet(toggle_style(b.isChecked()))
-                dest._dage_section_label.setText({
+                dest._dage_section_label.setTitle({
                     'Dage':    'Dage i cirkulation',
                     'Måneder': 'Måneder i cirkulation',
                     'År':      'År i cirkulation',

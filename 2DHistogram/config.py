@@ -4,15 +4,15 @@
 # The one exception is DATASET_MAP, which is populated at startup by main().
 
 # ── Colours ────────────────────────────────────────────────────────────────────
-DARK_BG  = "#1e1e2e"
-PANEL_BG = "#2a2a3e"
-ACCENT   = "#7c6af7"
-TEXT     = "#cdd6f4"
-SUBTEXT  = "#a6adc8"
-BORDER   = "#45475a"
-SUCCESS  = "#a6e3a1"
-DANGER   = "#f38ba8"
-INFO     = "#89dceb"
+DARK_BG  = "#1a1a1a"
+PANEL_BG = "#282828"
+ACCENT   = "#e8e8e8"
+TEXT     = "#b8b8b8"
+SUBTEXT  = "#707070"
+BORDER   = "#404040"
+SUCCESS  = "#5a9e5a"
+DANGER   = "#c0504d"
+INFO     = "#707070"
 
 # ── Scale config ───────────────────────────────────────────────────────────────
 SCALE_CONFIG = {

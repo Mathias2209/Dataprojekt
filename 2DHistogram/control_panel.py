@@ -64,21 +64,28 @@ class ControlPanel(QScrollArea):
 
         container = QWidget()
         container.setStyleSheet(f"background:{PANEL_BG};")
-        layout = QVBoxLayout(container)
+        columns = QHBoxLayout(container)
+        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setSpacing(0)
+
+        left_col = QWidget()
+        left_col.setStyleSheet(f"background:{PANEL_BG};")
+        layout = QVBoxLayout(left_col)
         layout.setSpacing(6)
         layout.setContentsMargins(10, 10, 10, 10)
+        columns.addWidget(left_col)
 
         layout.addWidget(styled_label(f"Graf {letter} — Indstillinger",
                                       bold=True, size=12, color=ACCENT))
         layout.addWidget(hr())
 
         # ── Load / Delete ─────────────────────────────────────────────────────
-        layout.addWidget(styled_label("📂 Indlæs / Slet", bold=True, color=INFO))
+        layout.addWidget(styled_label("Indlæs / Slet", bold=True))
         self.load_combo = QComboBox()
         style_combo(self.load_combo)
         self._refresh_saved()
         row_load = QHBoxLayout()
-        self.load_btn    = styled_btn("Indlæs", INFO)
+        self.load_btn    = styled_btn("Indlæs", ACCENT)
         self.refresh_btn = styled_btn("🔄", SUBTEXT, w=36)
         self.delete_btn  = styled_btn("🗑",    DANGER,  w=36)
         row_load.addWidget(self.load_btn)
@@ -114,54 +121,74 @@ class ControlPanel(QScrollArea):
         layout.addWidget(hr())
 
         # ── Bins ──────────────────────────────────────────────────────────────
-        layout.addWidget(styled_label("Bins", bold=True))
+        bins_group = QGroupBox("Bins & Glatning")
+        bins_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        bins_inner = QVBoxLayout()
+        bins_inner.addWidget(styled_label("Bins"))
         self.bins_slider, bins_lbl = make_slider_with_label(60, 5, 150)
         self.bins_val_lbl = bins_lbl
         r_bins = QHBoxLayout()
         r_bins.addWidget(self.bins_slider)
         r_bins.addWidget(bins_lbl)
-        layout.addLayout(r_bins)
-
-        layout.addWidget(styled_label("Glatning (Overdødelighed)", bold=True))
+        bins_inner.addLayout(r_bins)
+        bins_inner.addWidget(styled_label("Glatning (Overdødelighed)"))
         self.smooth_slider, smooth_lbl = make_slider_with_label(15, 2, 60)
         self.smooth_val_lbl = smooth_lbl
         r_sm = QHBoxLayout()
         r_sm.addWidget(self.smooth_slider)
         r_sm.addWidget(smooth_lbl)
-        layout.addLayout(r_sm)
+        bins_inner.addLayout(r_sm)
+        bins_group.setLayout(bins_inner)
+        layout.addWidget(bins_group)
 
-        # ── Checkboxes ────────────────────────────────────────────────────────
+        # ── Visning & Farveskala ──────────────────────────────────────────────
+        color_group = QGroupBox("Visning & Farveskala")
+        color_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        color_inner = QVBoxLayout()
+
         self.log_cb = QCheckBox("Logaritmisk farveskala (2D)")
         self.log_cb.setChecked(True)
         self.log_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
-        layout.addWidget(self.log_cb)
+        color_inner.addWidget(self.log_cb)
 
         self.log_y_cb = QCheckBox("Log y-akse (Overdødelighed)")
         self.log_y_cb.setChecked(False)
         self.log_y_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
-        layout.addWidget(self.log_y_cb)
+        color_inner.addWidget(self.log_y_cb)
 
         self.show_reg_cb = QCheckBox("Vis regressionsmodel")
         self.show_reg_cb.setChecked(True)
         self.show_reg_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
-        layout.addWidget(self.show_reg_cb)
+        color_inner.addWidget(self.show_reg_cb)
 
-        layout.addWidget(styled_label("Farve minimum (2D)"))
+        color_inner.addWidget(styled_label("Farve minimum (2D)"))
         self.vmin_slider, vmin_lbl = make_slider_with_label(1, 1, 200, scale=10.0)
         self.vmin_val_lbl = vmin_lbl
         r_vm = QHBoxLayout()
         r_vm.addWidget(self.vmin_slider)
         r_vm.addWidget(vmin_lbl)
-        layout.addLayout(r_vm)
-        layout.addWidget(styled_label("Min. alpha (skjul sparse celler)"))
+        color_inner.addLayout(r_vm)
+
+        color_inner.addWidget(styled_label("Min. alpha (skjul sparse celler)"))
         self.min_alpha_slider, min_alpha_lbl = make_slider_with_label(0, 0, 50)
         self.min_alpha_val_lbl = min_alpha_lbl
         r_ma = QHBoxLayout()
         r_ma.addWidget(self.min_alpha_slider)
         r_ma.addWidget(min_alpha_lbl)
-        layout.addLayout(r_ma)
+        color_inner.addLayout(r_ma)
         self.min_alpha_slider.valueChanged.connect(
             lambda v: [min_alpha_lbl.setText(str(v)), self.settings_changed.emit()])
+
+        color_group.setLayout(color_inner)
+        layout.addWidget(color_group)
 
         layout.addWidget(hr())
 
@@ -170,7 +197,7 @@ class ControlPanel(QScrollArea):
         self.note_edit = QTextEdit()
         self.note_edit.setFixedHeight(60)
         self.note_edit.setStyleSheet(
-            f"background:#13131f; color:{TEXT}; border:1px solid {BORDER}; border-radius:4px;"
+            f"background:#141414; color:{TEXT}; border:1px solid {BORDER}; border-radius:4px;"
         )
         layout.addWidget(self.note_edit)
 
@@ -178,18 +205,19 @@ class ControlPanel(QScrollArea):
         self.folder_edit = QLineEdit()
         self.folder_edit.setPlaceholderText("Lad stå tomt for auto-navn...")
         self.folder_edit.setStyleSheet(
-            f"background:#13131f; color:{TEXT}; border:1px solid {BORDER};"
+            f"background:#141414; color:{TEXT}; border:1px solid {BORDER};"
             f" border-radius:4px; padding:4px;"
         )
         layout.addWidget(self.folder_edit)
 
         row_save = QHBoxLayout()
-        self.save_btn = styled_btn("💾 Gem", SUCCESS)
-        self.csv_btn  = styled_btn("📄 CSV", SUBTEXT)
+        self.save_btn = styled_btn("Gem", SUCCESS)
+        self.csv_btn  = styled_btn("CSV", SUBTEXT)
         row_save.addWidget(self.save_btn)
         row_save.addWidget(self.csv_btn)
         layout.addLayout(row_save)
-        self._main_layout = layout
+        layout.addStretch()
+        self._columns = columns
         self.setWidget(container)
 
         # ── Signals ───────────────────────────────────────────────────────────
@@ -213,8 +241,13 @@ class ControlPanel(QScrollArea):
     # ── Filter panel factory ──────────────────────────────────────────────────
 
     def make_filter_panel(self) -> None:
-        """Append filter controls directly into this panel's scrollable layout."""
-        layout = self._main_layout
+        """Build the right-column filter controls inside this panel's scroll area."""
+        right_col = QWidget()
+        right_col.setStyleSheet(f"background:{PANEL_BG}; border-left:1px solid {BORDER};")
+        layout = QVBoxLayout(right_col)
+        layout.setSpacing(6)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self._columns.addWidget(right_col)
 
         layout.addWidget(styled_label("Filtrering", bold=True, size=12, color=ACCENT))
         layout.addWidget(hr())
@@ -239,9 +272,14 @@ class ControlPanel(QScrollArea):
         # Dage sliders
         df       = DATASET_MAP[self.ds_combo.currentText()]
         dage_max = int(df['Dage i cirkulation'].max()) + 100
-        self._dage_section_label = styled_label("Dage i cirkulation", bold=True)
-        layout.addWidget(self._dage_section_label)
-
+        dage_group = QGroupBox("Dage i cirkulation")
+        dage_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        dage_inner = QVBoxLayout()
+        self._dage_section_label = dage_group  # kept for external label updates via setTitle
         self.min_dage_slider, self.min_dage_edit = make_slider_with_edit(
             0, 0, dage_max, step=50)
         self.max_dage_slider, self.max_dage_edit = make_slider_with_edit(
@@ -252,12 +290,19 @@ class ControlPanel(QScrollArea):
             r.addWidget(styled_label(lbl_txt))
             r.addWidget(sl, stretch=1)
             r.addWidget(ed)
-            layout.addLayout(r)
-        layout.addWidget(hr())
+            dage_inner.addLayout(r)
+        dage_group.setLayout(dage_inner)
+        layout.addWidget(dage_group)
 
         # Vask sliders
         vask_max = int(df['Total antal vask'].max()) + 10
-        layout.addWidget(styled_label("Total antal vask", bold=True))
+        vask_group = QGroupBox("Total antal vask")
+        vask_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        vask_inner = QVBoxLayout()
         self.min_vask_slider, self.min_vask_edit = make_slider_with_edit(0, 0, vask_max)
         self.max_vask_slider, self.max_vask_edit = make_slider_with_edit(
             DEFAULT_MAX_VASK, 0, vask_max)
@@ -267,13 +312,15 @@ class ControlPanel(QScrollArea):
             r.addWidget(styled_label(lbl_txt))
             r.addWidget(sl, stretch=1)
             r.addWidget(ed)
-            layout.addLayout(r)
+            vask_inner.addLayout(r)
+        vask_group.setLayout(vask_inner)
+        layout.addWidget(vask_group)
 
         # Ratio group
         rmin, rmax = ratio_range(df)
         self.ratio_group = QGroupBox("Vask per måned (ratio)")
         self.ratio_group.setStyleSheet(
-            f"QGroupBox {{ color:{INFO}; font-weight:bold; border:1px solid {BORDER};"
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
             f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
             f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
         )
@@ -293,24 +340,32 @@ class ControlPanel(QScrollArea):
         layout.addWidget(self.ratio_group)
         self.ratio_group.setVisible(RATIO_COL in df.columns)
 
-        layout.addWidget(hr())
-
         # Reference lines
-        layout.addWidget(styled_label("Referencelinjer", bold=True))
+        ref_group = QGroupBox("Referencelinjer")
+        ref_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        ref_inner = QVBoxLayout()
         self.ref_cbs: dict[str, QCheckBox] = {}
         for i, (_, lbl) in enumerate(REF_LINE_DEFS):
             cb = QCheckBox(lbl)
-            cb.setStyleSheet(
-                f"color:{REF_COLORS[i]}; background:transparent; font-weight:bold;"
-            )
+            cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
             cb.stateChanged.connect(self.settings_changed)
             self.ref_cbs[lbl] = cb
-            layout.addWidget(cb)
-
-        layout.addWidget(hr())
+            ref_inner.addWidget(cb)
+        ref_group.setLayout(ref_inner)
+        layout.addWidget(ref_group)
 
         # Percentile lines
-        layout.addWidget(styled_label("Kvantillinjer", bold=True))
+        pct_group = QGroupBox("Kvantillinjer")
+        pct_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        pct_inner = QVBoxLayout()
         self.pct_cbs: dict[str, QCheckBox] = {}
         for lbl in ['25%', 'Median', '75%']:
             cb = QCheckBox(lbl)
@@ -318,35 +373,42 @@ class ControlPanel(QScrollArea):
             cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
             cb.stateChanged.connect(self.settings_changed)
             self.pct_cbs[lbl] = cb
-            layout.addWidget(cb)
-
-        layout.addWidget(hr())
+            pct_inner.addWidget(cb)
+        pct_group.setLayout(pct_inner)
+        layout.addWidget(pct_group)
 
         # Overdødelighed toggles
-        layout.addWidget(styled_label("Overdødelighed — vis", bold=True))
+        od_group = QGroupBox("Overdødelighed")
+        od_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; }}"
+        )
+        od_inner = QVBoxLayout()
 
         self.show_4sigma_cb = QCheckBox("4σ-tærskel")
         self.show_4sigma_cb.setChecked(True)
         self.show_4sigma_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
         self.show_4sigma_cb.stateChanged.connect(self.settings_changed)
-        layout.addWidget(self.show_4sigma_cb)
+        od_inner.addWidget(self.show_4sigma_cb)
 
         self.show_2sigma_cb = QCheckBox("2σ-tærskel")
         self.show_2sigma_cb.setChecked(True)
         self.show_2sigma_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
         self.show_2sigma_cb.stateChanged.connect(self.settings_changed)
-        layout.addWidget(self.show_2sigma_cb)
+        od_inner.addWidget(self.show_2sigma_cb)
 
         self.show_survival_cb = QCheckBox("Overlevelseskurve")
         self.show_survival_cb.setChecked(True)
         self.show_survival_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
         self.show_survival_cb.stateChanged.connect(self.settings_changed)
-        layout.addWidget(self.show_survival_cb)
+        od_inner.addWidget(self.show_survival_cb)
 
-        layout.addWidget(hr())
+        od_group.setLayout(od_inner)
+        layout.addWidget(od_group)
 
         # Sync group (hidden until 2-graf mode)
-        self.sync_group = QGroupBox("🔗 Synkroniser A↔B")
+        self.sync_group = QGroupBox("Synkroniser A↔B")
         self.sync_group.setStyleSheet(
             f"QGroupBox {{ color:{ACCENT}; font-weight:bold; border:1px solid {BORDER};"
             f" border-radius:6px; margin-top:8px; padding-top:8px; background:{PANEL_BG}; }}"
@@ -356,7 +418,7 @@ class ControlPanel(QScrollArea):
         sync_layout.setSpacing(4)
         self.sync_all_cb = QCheckBox("Alle")
         self.sync_all_cb.setStyleSheet(
-            f"color:{INFO}; font-weight:bold; background:transparent;")
+            f"color:{ACCENT}; font-weight:bold; background:transparent;")
         sync_layout.addWidget(self.sync_all_cb)
 
         SYNC_GROUPS = [
@@ -414,8 +476,6 @@ class ControlPanel(QScrollArea):
                    self.min_vask_slider,  self.max_vask_slider,
                    self.min_ratio_slider, self.max_ratio_slider]:
             sl.valueChanged.connect(self.settings_changed)
-
-        return panel
 
     # ── Slider ↔ edit sync helpers ────────────────────────────────────────────
 
@@ -493,7 +553,7 @@ class ControlPanel(QScrollArea):
     def _on_skala_changed(self, _btn):
         for s, b in self.skala_btns.items():
             b.setStyleSheet(toggle_style(b.isChecked()))
-        self._dage_section_label.setText({
+        self._dage_section_label.setTitle({
             'Dage':    'Dage i cirkulation',
             'Måneder': 'Måneder i cirkulation',
             'År':      'År i cirkulation',

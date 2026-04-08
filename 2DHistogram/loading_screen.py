@@ -162,8 +162,8 @@ class _ProgressBar(QWidget):
         fill_w = int(w * self._value / 100)
         if fill_w > 0:
             grad = QLinearGradient(0, 0, fill_w, 0)
-            grad.setColorAt(0.0, QColor("#5a54d4"))   # darker purple
-            grad.setColorAt(1.0, QColor(ACCENT))       # bright accent
+            grad.setColorAt(0.0, QColor("#505050"))   # dark gray
+            grad.setColorAt(1.0, QColor(ACCENT))       # light gray accent
             painter.setBrush(grad)
             # Clip fill to pill shape by drawing into the same rounded rect
             painter.setClipRect(QRect(0, 0, fill_w, h))

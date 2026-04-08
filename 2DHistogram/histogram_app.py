@@ -64,12 +64,12 @@ class MainWindow(QMainWindow):
         top.addWidget(self.view_btn_1)
         top.addWidget(self.view_btn_2)
 
-        refresh_btn = QPushButton("🔄  Opdater data")
+        refresh_btn = QPushButton("Opdater data")
         refresh_btn.setToolTip("Slet cache og genindlæs fra dataloader, derefter genstart")
         refresh_btn.setStyleSheet(
-            f"QPushButton {{ background:#13131f; color:{INFO};"
+            f"QPushButton {{ background:#141414; color:{SUBTEXT};"
             f" border:1px solid {BORDER}; border-radius:5px; padding:5px 14px; }}"
-            f"QPushButton:hover {{ background:{INFO}; color:{DARK_BG}; }}"
+            f"QPushButton:hover {{ background:{SUBTEXT}; color:{DARK_BG}; }}"
         )
         if on_refresh:
             refresh_btn.clicked.connect(on_refresh)
@@ -125,7 +125,7 @@ def _apply_dark_palette(app: QApplication) -> None:
     palette = QPalette()
     palette.setColor(QPalette.Window,          QColor(DARK_BG))
     palette.setColor(QPalette.WindowText,      QColor(TEXT))
-    palette.setColor(QPalette.Base,            QColor("#13131f"))
+    palette.setColor(QPalette.Base,            QColor("#141414"))
     palette.setColor(QPalette.AlternateBase,   QColor(PANEL_BG))
     palette.setColor(QPalette.ToolTipBase,     QColor(TEXT))
     palette.setColor(QPalette.ToolTipText,     QColor(DARK_BG))

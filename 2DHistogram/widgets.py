@@ -43,7 +43,7 @@ def styled_btn(text: str, color: str = TEXT, w: int = None) -> QPushButton:
     w_str = f"min-width:{w}px; max-width:{w}px;" if w else ""
     btn.setStyleSheet(f"""
         QPushButton {{
-            background: #13131f; color: {color};
+            background: #141414; color: {color};
             border: 1px solid {color};
             border-radius: 4px; padding: 4px 10px; {w_str}
         }}
@@ -62,7 +62,7 @@ def top_btn(text: str, active: bool = False) -> QPushButton:
 
 
 def top_btn_style(active: bool) -> str:
-    bg  = ACCENT if active else "#13131f"
+    bg  = ACCENT if active else "#141414"
     col = DARK_BG if active else TEXT
     return (
         f"QPushButton {{"
@@ -77,7 +77,7 @@ def top_btn_style(active: bool) -> str:
 
 def toggle_style(active: bool) -> str:
     """Style for the Dage/Måneder/År skala toggle buttons."""
-    bg = ACCENT if active else "#13131f"
+    bg = ACCENT if active else "#141414"
     return (
         f"QPushButton {{"
         f"  background:{bg}; color:{TEXT};"
@@ -131,7 +131,7 @@ def make_slider_with_edit(value: int, mn: int, mx: int,
     edit.setAlignment(Qt.AlignRight)
     edit.setStyleSheet(f"""
         QLineEdit {{
-            background: #13131f; color: {TEXT};
+            background: #141414; color: {TEXT};
             border: 1px solid {BORDER};
             border-radius: 3px; padding: 1px 4px; font-size: 11px;
         }}
@@ -161,13 +161,13 @@ def style_combo(combo) -> None:
     """Apply the dark theme to a QComboBox in-place."""
     combo.setStyleSheet(f"""
         QComboBox {{
-            background: #13131f; color: {TEXT};
+            background: #141414; color: {TEXT};
             border: 1px solid {BORDER};
             border-radius: 4px; padding: 4px 8px;
         }}
         QComboBox::drop-down {{ border: none; }}
         QComboBox QAbstractItemView {{
-            background: #13131f; color: {TEXT};
+            background: #141414; color: {TEXT};
             selection-background-color: {ACCENT};
         }}
     """)
