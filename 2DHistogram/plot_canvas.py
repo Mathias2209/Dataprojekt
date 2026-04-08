@@ -25,9 +25,9 @@ class PlotCanvas(FigureCanvas):
     """Matplotlib canvas embedded in Qt.  Call draw_histogram() to render."""
 
     def __init__(self):
-        self.fig = Figure(figsize=(8, 5), facecolor=DARK_BG)
+        self.fig = Figure(figsize=(8, 5), facecolor='white')
         super().__init__(self.fig)
-        self.setStyleSheet(f"background-color:{DARK_BG};")
+        self.setStyleSheet("background-color:white;")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     # ── Main draw entry point ─────────────────────────────────────────────────
@@ -57,6 +57,7 @@ class PlotCanvas(FigureCanvas):
         show_4sigma: bool  = True,
         show_2sigma: bool  = True,
         show_survival: bool = True,
+        min_alpha: float   = 0.0,
     ):
         """
         Render the histogram (and optionally the overdødelighed curve) into
@@ -83,24 +84,24 @@ class PlotCanvas(FigureCanvas):
         if x_min >= x_max:  x_max = x_min + 0.1
         if min_vask >= max_vask: max_vask = min_vask + 1
 
-        cmap = copy.copy(matplotlib.colormaps['Reds'])
-        cmap.set_bad('#13131f'); cmap.set_under('#13131f')
+        cmap = copy.copy(matplotlib.colormaps['Greens'])
+        cmap.set_bad('white'); cmap.set_under('white')
 
         matplotlib.rcParams.update({
-            'text.color':      TEXT,
-            'axes.labelcolor': TEXT,
-            'xtick.color':     SUBTEXT,
-            'ytick.color':     SUBTEXT,
+            'text.color':      'black',
+            'axes.labelcolor': 'black',
+            'xtick.color':     '#444444',
+            'ytick.color':     '#444444',
         })
 
         # ── Empty-data guard ──────────────────────────────────────────────────
         if len(kd) == 0:
-            ax = self.fig.add_subplot(111, facecolor='#13131f')
+            ax = self.fig.add_subplot(111, facecolor='white')
             ax.text(0.5, 0.5, 'Ingen data i det valgte interval',
                     ha='center', va='center', transform=ax.transAxes,
-                    fontsize=13, color=SUBTEXT)
+                    fontsize=13, color='#444444')
             for spine in ax.spines.values():
-                spine.set_edgecolor(BORDER)
+                spine.set_edgecolor('#bbbbbb')
             self.draw()
             return kd
 
@@ -126,12 +127,12 @@ class PlotCanvas(FigureCanvas):
         ax = ax_hist = None
         if plot_type == 'Begge':
             gs      = self.fig.add_gridspec(2, 1, height_ratios=[2.2, 1.3], hspace=0.15)
-            ax      = self.fig.add_subplot(gs[0], facecolor='#13131f')
-            ax_hist = self.fig.add_subplot(gs[1], facecolor='#13131f', sharex=ax)
+            ax      = self.fig.add_subplot(gs[0], facecolor='white')
+            ax_hist = self.fig.add_subplot(gs[1], facecolor='white', sharex=ax)
         elif plot_type == '2D Histogram':
-            ax      = self.fig.add_subplot(111, facecolor='#13131f')
+            ax      = self.fig.add_subplot(111, facecolor='white')
         else:
-            ax_hist = self.fig.add_subplot(111, facecolor='#13131f')
+            ax_hist = self.fig.add_subplot(111, facecolor='white')
 
         # ── 2D Histogram ──────────────────────────────────────────────────────
         if ax is not None:
@@ -139,7 +140,7 @@ class PlotCanvas(FigureCanvas):
                           div, bins, cmap, vmin, log_color, slope, intercept,
                           can_regress, show_regression, ref_lines, show_percentiles,
                           kd, xlabel, ax_hist, datasæt_navn, kassationsårsag,
-                          total, len(kd))
+                          total, len(kd), min_alpha)
 
         # ── Overdødelighed ────────────────────────────────────────────────────
         if ax_hist is not None:
@@ -162,8 +163,8 @@ class PlotCanvas(FigureCanvas):
         if show_regression and can_regress and ax is not None:
             self.fig.text(
                 0.5, 0.01, stats_text,
-                ha='center', va='bottom', fontsize=9, color=TEXT,
-                bbox=dict(facecolor=PANEL_BG, edgecolor=BORDER, boxstyle='round,pad=0.4')
+                ha='center', va='bottom', fontsize=9, color='black',
+                bbox=dict(facecolor='white', edgecolor='#bbbbbb', boxstyle='round,pad=0.4')
             )
             self.fig.subplots_adjust(bottom=0.12)
 
@@ -180,22 +181,28 @@ class PlotCanvas(FigureCanvas):
                  min_vask, max_vask, div, bins, cmap, vmin, log_color,
                  slope, intercept, can_regress, show_regression,
                  ref_lines, show_percentiles, kd, xlabel, ax_hist,
-                 datasæt_navn, kassationsårsag, total, n_kd):
+                 datasæt_navn, kassationsårsag, total, n_kd, min_alpha=0.0):
 
-        h = ax.hist2d(x_data, y_data, bins=bins, cmap=cmap,
-                      range=[[x_min, x_max], [min_vask, max_vask]],
-                      norm=LogNorm(vmin=vmin) if log_color else Normalize(vmin=vmin))
+        # Compute histogram manually to support per-cell masking (min_alpha)
+        H, xedges, yedges = np.histogram2d(
+            x_data, y_data, bins=bins,
+            range=[[x_min, x_max], [min_vask, max_vask]]
+        )
+        mask = (H < min_alpha) if min_alpha > 0 else (H == 0)
+        H_masked = np.ma.array(H, mask=mask)
+        norm = LogNorm(vmin=vmin) if log_color else Normalize(vmin=vmin)
+        mesh = ax.pcolormesh(xedges, yedges, H_masked.T, cmap=cmap, norm=norm)
         cb = self.fig.colorbar(
-            h[3], ax=ax,
+            mesh, ax=ax,
             label='Antal produkter (log)' if log_color else 'Antal produkter'
         )
-        cb.ax.yaxis.label.set_color(TEXT)
-        cb.ax.tick_params(colors=TEXT)
+        cb.ax.yaxis.label.set_color('black')
+        cb.ax.tick_params(colors='black')
 
         if show_regression and can_regress:
             x_line = np.array([x_min, x_max])
             ax.plot(x_line, slope * x_line + intercept,
-                    color='white', lw=2, ls='-', label='Best Fit', alpha=0.85)
+                    color='#222222', lw=2, ls='-', label='Best Fit', alpha=0.85)
 
         if ref_lines:
             xs = np.linspace(x_min, x_max, 300)
@@ -207,7 +214,7 @@ class PlotCanvas(FigureCanvas):
 
         if ref_lines or (show_regression and can_regress):
             ax.legend(fontsize=8, loc='upper left',
-                      facecolor=PANEL_BG, edgecolor=BORDER, labelcolor=TEXT)
+                      facecolor='white', edgecolor='#bbbbbb', labelcolor='black')
 
         if show_percentiles:
             col = kd['Dage i cirkulation']
@@ -219,24 +226,24 @@ class PlotCanvas(FigureCanvas):
                 if label not in show_percentiles: continue
                 vx = val / div
                 if x_min < vx < x_max:
-                    ax.axvline(vx, color='white', lw=1.5, ls=ls, alpha=0.85)
+                    ax.axvline(vx, color='#222222', lw=1.5, ls=ls, alpha=0.85)
                     ax.text(vx, max_vask * y_frac,
                             f'{label}\n{val / 365.25:.1f} år',
-                            color='white', fontsize=7.5, ha='center', va='top',
+                            color='#222222', fontsize=7.5, ha='center', va='top',
                             bbox=dict(boxstyle='round,pad=0.2',
-                                      fc='#13131f', alpha=0.8, ec='none'))
+                                      fc='white', alpha=0.8, ec='#bbbbbb'))
 
         title   = f'{datasæt_navn} — {kassationsårsag}' if datasæt_navn else kassationsårsag
         pct_str = f'  ({100 * n_kd / total:.1f}% af datasæt)' if total else ''
-        ax.set_title(f'{title}\n{n_kd} produkter{pct_str}', color=TEXT, fontsize=11)
-        ax.set_ylabel('Total antal vask', color=SUBTEXT)
+        ax.set_title(f'{title}\n{n_kd} produkter{pct_str}', color='black', fontsize=11)
+        ax.set_ylabel('Total antal vask', color='#444444')
         if ax_hist is None:
-            ax.set_xlabel(xlabel, color=SUBTEXT)
+            ax.set_xlabel(xlabel, color='#444444')
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(min_vask, max_vask)
-        ax.tick_params(colors=SUBTEXT)
+        ax.tick_params(colors='#444444')
         for spine in ax.spines.values():
-            spine.set_edgecolor(BORDER)
+            spine.set_edgecolor('#bbbbbb')
 
     def _draw_overdødelighed(self, ax_hist, x_data_raw, x_data,
                               x_min, x_max, min_dage, max_dage,
@@ -300,7 +307,7 @@ class PlotCanvas(FigureCanvas):
 
         # Observed counts
         ax_hist.plot(x_hist_vals, counts,
-                     color=TEXT, lw=1.8, alpha=0.92, label='Registreret')
+                     color='black', lw=1.8, alpha=0.92, label='Registreret')
 
         # Yellow fill where observed exceeds 2σ threshold
         if show_2sigma:
@@ -310,21 +317,21 @@ class PlotCanvas(FigureCanvas):
                                      where=over2, alpha=0.30,
                                      color='#f9e2af', label='Over tærskel')
 
-        ax_hist.set_ylabel('Antal kasseret', color=TEXT)
-        ax_hist.tick_params(axis='y', labelcolor=TEXT)
-        ax_hist.set_facecolor('#13131f')
+        ax_hist.set_ylabel('Antal kasseret', color='black')
+        ax_hist.tick_params(axis='y', labelcolor='black')
+        ax_hist.set_facecolor('white')
         for spine in ax_hist.spines.values():
-            spine.set_edgecolor(BORDER)
+            spine.set_edgecolor('#bbbbbb')
 
         if ax is None:
             title   = f'{datasæt_navn} — {kassationsårsag}' if datasæt_navn else kassationsårsag
             pct_str = f'  ({100 * n_kd / total:.1f}% af datasæt)' if total else ''
             ax_hist.set_title(
                 f'{title}\n{n_kd} produkter{pct_str}\nKassations-profil (Overdødelighed)',
-                color=TEXT, fontsize=11)
+                color='black', fontsize=11)
         else:
             ax_hist.set_title('Kassations-profil (Overdødelighed)',
-                               color=TEXT, fontsize=10, pad=8)
+                               color='black', fontsize=10, pad=8)
 
         if log_y_hist:
             ax_hist.set_yscale('log')
@@ -339,17 +346,17 @@ class PlotCanvas(FigureCanvas):
             ax_surv.tick_params(axis='y', labelcolor=SUCCESS)
             ax_surv.set_ylim(0, 105)
             for spine in ax_surv.spines.values():
-                spine.set_edgecolor(BORDER)
+                spine.set_edgecolor('#bbbbbb')
             lines_1, labels_1 = ax_hist.get_legend_handles_labels()
             lines_2, labels_2 = ax_surv.get_legend_handles_labels()
             ax_hist.legend(lines_1 + lines_2, labels_1 + labels_2,
                            loc='upper right', fontsize=8,
-                           facecolor=PANEL_BG, edgecolor=BORDER,
-                           labelcolor=TEXT, ncol=2)
+                           facecolor='white', edgecolor='#bbbbbb',
+                           labelcolor='black', ncol=2)
         else:
             ax_hist.legend(loc='upper right', fontsize=8,
-                           facecolor=PANEL_BG, edgecolor=BORDER, labelcolor=TEXT)
+                           facecolor='white', edgecolor='#bbbbbb', labelcolor='black')
 
-        ax_hist.set_xlabel(xlabel, color=SUBTEXT)
+        ax_hist.set_xlabel(xlabel, color='#444444')
         ax_hist.set_xlim(x_min, x_max)
-        ax_hist.grid(True, alpha=0.25, linestyle='--', color=BORDER)
+        ax_hist.grid(True, alpha=0.25, linestyle='--', color='#cccccc')
