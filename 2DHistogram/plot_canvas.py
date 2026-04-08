@@ -190,7 +190,12 @@ class PlotCanvas(FigureCanvas):
         )
         mask = (H < min_alpha) if min_alpha > 0 else (H == 0)
         H_masked = np.ma.array(H, mask=mask)
-        norm = LogNorm(vmin=vmin) if log_color else Normalize(vmin=vmin)
+        if log_color:
+            norm = LogNorm(vmin=vmin)
+        else:
+            nonzero_counts = H[H > 0]
+            vmax = float(np.percentile(nonzero_counts, 99)) if nonzero_counts.size > 0 else None
+            norm = Normalize(vmin=vmin, vmax=vmax)
         mesh = ax.pcolormesh(xedges, yedges, H_masked.T, cmap=cmap, norm=norm)
         cb = self.fig.colorbar(
             mesh, ax=ax,
