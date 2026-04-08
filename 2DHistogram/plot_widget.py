@@ -63,4 +63,5 @@ class PlotWidget(QWidget):
             show_4sigma       = s.get('show_4sigma', True),
             show_2sigma       = s.get('show_2sigma', True),
             show_survival     = s.get('show_survival', True),
+            min_alpha         = s.get('min_alpha', 0.0),
         )
