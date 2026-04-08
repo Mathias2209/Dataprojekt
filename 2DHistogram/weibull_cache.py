@@ -215,16 +215,19 @@ def prefetch_all_weibull(status_cb=None, progress_cb=None) -> None:
         if not os.path.isfile(cache_path):
             pending.append((ds_name, årsag, days, cache_key))
 
+    n_total_tasks = len(tasks)
     if not pending:
         # All models already cached — return immediately WITHOUT importing
         # pymc or pytensor.  On Windows this avoids a slow C++ compilation
         # check that happens on every pymc import even when no fitting is done.
-        _p(90, "Alle Weibull-modeller er allerede cachet ✔")
+        _p(90, f"Alle {n_total_tasks} Weibull-modeller er allerede cachet ✔")
         return
 
     # Only reach here if at least one model needs fitting — now safe to import.
     n_total = len(pending)
-    _s(f"Weibull MCMC: {n_total} modeller skal fittes (første opstart)…")
+    n_cached = n_total_tasks - n_total
+    _s(f"Weibull MCMC: {n_total}/{n_total_tasks} modeller skal fittes"
+       f"{f' ({n_cached} allerede cachet)' if n_cached else ''}…")
 
     for i, (ds_name, årsag, days, cache_key) in enumerate(pending):
         # Progress spans 80 → 90 % across all fits
