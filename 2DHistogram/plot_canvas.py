@@ -84,7 +84,10 @@ class PlotCanvas(FigureCanvas):
         if x_min >= x_max:  x_max = x_min + 0.1
         if min_vask >= max_vask: max_vask = min_vask + 1
 
-        cmap = copy.copy(matplotlib.colormaps['Greens'])
+        full_greens = matplotlib.colormaps['Greens']
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+            'Greens_visible', full_greens(np.linspace(0.35, 1.0, 256))
+        )
         cmap.set_bad('white'); cmap.set_under('white')
 
         matplotlib.rcParams.update({
