@@ -55,7 +55,7 @@ class ControlPanel(QScrollArea):
         super().__init__(parent)
         self.letter = letter
         self.setWidgetResizable(True)
-        self.setFixedWidth(310)
+        self.setFixedWidth(620)
         self.setStyleSheet(
             f"QScrollArea {{ background:{PANEL_BG}; border:1px solid {BORDER}; border-radius:8px; }}"
             f"QScrollBar:vertical {{ background:{DARK_BG}; width:8px; border-radius:4px; }}"
@@ -189,7 +189,7 @@ class ControlPanel(QScrollArea):
         row_save.addWidget(self.save_btn)
         row_save.addWidget(self.csv_btn)
         layout.addLayout(row_save)
-        layout.addStretch()
+        self._main_layout = layout
         self.setWidget(container)
 
         # ── Signals ───────────────────────────────────────────────────────────
@@ -212,24 +212,11 @@ class ControlPanel(QScrollArea):
 
     # ── Filter panel factory ──────────────────────────────────────────────────
 
-    def make_filter_panel(self) -> QScrollArea:
-        """Build and return the right-side filter panel for this control panel."""
-        panel = QScrollArea()
-        panel.setWidgetResizable(True)
-        panel.setFixedWidth(310)
-        panel.setStyleSheet(
-            f"QScrollArea {{ background:{PANEL_BG}; border:1px solid {BORDER}; border-radius:8px; }}"
-            f"QScrollBar:vertical {{ background:{DARK_BG}; width:8px; border-radius:4px; }}"
-            f"QScrollBar::handle:vertical {{ background:{BORDER}; border-radius:4px; }}"
-        )
-        container = QWidget()
-        container.setStyleSheet(f"background:{PANEL_BG};")
-        layout = QVBoxLayout(container)
-        layout.setSpacing(6)
-        layout.setContentsMargins(10, 10, 10, 10)
+    def make_filter_panel(self) -> None:
+        """Append filter controls directly into this panel's scrollable layout."""
+        layout = self._main_layout
 
-        layout.addWidget(styled_label(f"Graf {self.letter} — Filtrering",
-                                      bold=True, size=12, color=ACCENT))
+        layout.addWidget(styled_label("Filtrering", bold=True, size=12, color=ACCENT))
         layout.addWidget(hr())
 
         # X-skala buttons
@@ -399,8 +386,6 @@ class ControlPanel(QScrollArea):
             cb.stateChanged.connect(self._on_sync_individual_changed)
 
         layout.addStretch()
-        panel.setWidget(container)
-        self.filter_panel = panel
 
         # Wire sliders ↔ edits
         self.min_dage_slider.valueChanged.connect(self._sync_dage_slider_to_edit)

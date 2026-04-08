@@ -28,12 +28,11 @@ class GraphPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self.ctrl         = ControlPanel(letter)
-        self.filter_panel = self.ctrl.make_filter_panel()
-        self.plot_widget  = PlotWidget(letter)
+        self.ctrl        = ControlPanel(letter)
+        self.ctrl.make_filter_panel()
+        self.plot_widget = PlotWidget(letter)
 
         layout.addWidget(self.ctrl)
-        layout.addWidget(self.filter_panel)
         layout.addWidget(self.plot_widget, stretch=1)
 
         self.ctrl.settings_changed.connect(self.redraw)
@@ -82,7 +81,7 @@ class DualGraphPanel(QWidget):
 
         # ── Left: tabbed controls ─────────────────────────────────────────────
         ctrl_container = QWidget()
-        ctrl_container.setFixedWidth(640)
+        ctrl_container.setFixedWidth(628)
         ctrl_layout = QVBoxLayout(ctrl_container)
         ctrl_layout.setContentsMargins(0, 0, 0, 0)
         ctrl_layout.setSpacing(4)
@@ -95,21 +94,21 @@ class DualGraphPanel(QWidget):
             f"QTabBar::tab:selected {{ background:{ACCENT}; color:{DARK_BG}; font-weight:bold; }}"
         )
 
-        self.ctrl_a  = ControlPanel('A')
-        self.filter_a = self.ctrl_a.make_filter_panel()
+        self.ctrl_a = ControlPanel('A')
+        self.ctrl_a.make_filter_panel()
         self.ctrl_a.sync_group.setVisible(True)
         tab_a = QWidget(); tab_a.setStyleSheet(f"background:{DARK_BG};")
         ta_layout = QHBoxLayout(tab_a)
         ta_layout.setContentsMargins(0, 4, 0, 0); ta_layout.setSpacing(6)
-        ta_layout.addWidget(self.ctrl_a); ta_layout.addWidget(self.filter_a)
+        ta_layout.addWidget(self.ctrl_a)
 
-        self.ctrl_b  = ControlPanel('B')
-        self.filter_b = self.ctrl_b.make_filter_panel()
+        self.ctrl_b = ControlPanel('B')
+        self.ctrl_b.make_filter_panel()
         self.ctrl_b.sync_group.setVisible(True)
         tab_b = QWidget(); tab_b.setStyleSheet(f"background:{DARK_BG};")
         tb_layout = QHBoxLayout(tab_b)
         tb_layout.setContentsMargins(0, 4, 0, 0); tb_layout.setSpacing(6)
-        tb_layout.addWidget(self.ctrl_b); tb_layout.addWidget(self.filter_b)
+        tb_layout.addWidget(self.ctrl_b)
 
         self.ctrl_tabs.addTab(tab_a, "Graf A — Indstillinger")
         self.ctrl_tabs.addTab(tab_b, "Graf B — Indstillinger")
