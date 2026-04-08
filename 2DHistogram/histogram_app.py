@@ -12,7 +12,7 @@
 #   plot_canvas.py     ← PlotCanvas + draw_histogram()
 #   plot_widget.py     ← PlotWidget (canvas + header)
 #   control_panel.py   ← ControlPanel + make_filter_panel()
-#   panels.py          ← GraphPanel, DualGraphPanel
+#   panels.py          ← GraphPanel, DualGraphPanel 
 
 import sys
 
