@@ -153,6 +153,16 @@ class ControlPanel(QScrollArea):
         r_vm.addWidget(self.vmin_slider)
         r_vm.addWidget(vmin_lbl)
         layout.addLayout(r_vm)
+        layout.addWidget(styled_label("Min. alpha (skjul sparse celler)"))
+        self.min_alpha_slider, min_alpha_lbl = make_slider_with_label(0, 0, 50)
+        self.min_alpha_val_lbl = min_alpha_lbl
+        r_ma = QHBoxLayout()
+        r_ma.addWidget(self.min_alpha_slider)
+        r_ma.addWidget(min_alpha_lbl)
+        layout.addLayout(r_ma)
+        self.min_alpha_slider.valueChanged.connect(
+            lambda v: [min_alpha_lbl.setText(str(v)), self.settings_changed.emit()])
+
         layout.addWidget(hr())
 
         # ── Note / folder / save ──────────────────────────────────────────────
@@ -348,6 +358,37 @@ class ControlPanel(QScrollArea):
 
         layout.addWidget(hr())
 
+        # ── Custom vertical line ───────────────────────────────────────────────
+        layout.addWidget(styled_label("Brugerdefineret linje", bold=True))
+        layout.addWidget(styled_label("X-position (i valgt skala)", color=SUBTEXT))
+
+        custom_line_row = QHBoxLayout()
+        self.custom_line_edit = QLineEdit()
+        self.custom_line_edit.setPlaceholderText("f.eks. 730 (dage)")
+        self.custom_line_edit.setStyleSheet(
+            f"background:#13131f; color:{TEXT}; border:1px solid {BORDER};"
+            f" border-radius:4px; padding:4px;"
+        )
+        self.custom_line_clear_btn = styled_btn("✕", DANGER, w=30)
+        self.custom_line_clear_btn.setToolTip("Fjern linje")
+        custom_line_row.addWidget(self.custom_line_edit, stretch=1)
+        custom_line_row.addWidget(self.custom_line_clear_btn)
+        layout.addLayout(custom_line_row)
+
+        layout.addWidget(styled_label("Farve", color=SUBTEXT))
+        self.custom_line_color_combo = QComboBox()
+        style_combo(self.custom_line_color_combo)
+        for name in ["Rød", "Blå", "Grøn", "Sort", "Lilla", "Orange"]:
+            self.custom_line_color_combo.addItem(name)
+        layout.addWidget(self.custom_line_color_combo)
+
+        self.custom_line_edit.editingFinished.connect(self.settings_changed)
+        self.custom_line_clear_btn.clicked.connect(
+            lambda: [self.custom_line_edit.clear(), self.settings_changed.emit()])
+        self.custom_line_color_combo.currentIndexChanged.connect(self.settings_changed)
+
+        layout.addWidget(hr())
+
         # Sync group (hidden until 2-graf mode)
         self.sync_group = QGroupBox("🔗 Synkroniser A↔B")
         self.sync_group.setStyleSheet(
@@ -372,6 +413,7 @@ class ControlPanel(QScrollArea):
             ("Graftype & Bins",      ['plot_type', 'bins', 'smooth']),
             ("Farveskala & Linjer",  ['log_color', 'vmin', 'log_y_hist',
                                       'show_reg', 'ref_lines', 'show_percentiles']),
+            ("Brugerdefineret linje", ['custom_line', 'custom_line_color']),
         ]
         self._sync_key_map = SYNC_GROUPS
         self.sync_cbs: dict[str, QCheckBox] = {}
@@ -590,6 +632,12 @@ class ControlPanel(QScrollArea):
         if s.get('log_color')   is not None: self.log_cb.setChecked(s['log_color'])
         if s.get('log_y_hist')  is not None: self.log_y_cb.setChecked(s['log_y_hist'])
         if s.get('show_reg')    is not None: self.show_reg_cb.setChecked(s['show_reg'])
+        if s.get('min_alpha')   is not None: self.min_alpha_slider.setValue(int(s['min_alpha'] * 10))
+        if s.get('custom_line') is not None:
+            self.custom_line_edit.setText(s['custom_line'])
+        if s.get('custom_line_color'):
+            idx = self.custom_line_color_combo.findText(s['custom_line_color'])
+            if idx >= 0: self.custom_line_color_combo.setCurrentIndex(idx)
         if s.get('show_4sigma') is not None: self.show_4sigma_cb.setChecked(s['show_4sigma'])
         if s.get('show_2sigma') is not None: self.show_2sigma_cb.setChecked(s['show_2sigma'])
         if s.get('show_survival') is not None: self.show_survival_cb.setChecked(s['show_survival'])
@@ -677,4 +725,7 @@ class ControlPanel(QScrollArea):
             'max_vask':         self.max_vask_slider.value(),
             'min_ratio':        self.min_ratio_slider.value() / 100.0,
             'max_ratio':        self.max_ratio_slider.value() / 100.0,
+            'min_alpha':        self.min_alpha_slider.value() / 10.0,
+            'custom_line':      self.custom_line_edit.text().strip(),
+            'custom_line_color': self.custom_line_color_combo.currentText(),
         }
