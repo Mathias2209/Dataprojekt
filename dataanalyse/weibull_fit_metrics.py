@@ -1,8 +1,15 @@
 import os
+import sys
 import numpy as np
 import pandas as pd
 from scipy.stats import weibull_min, ks_2samp
 from tabulate import tabulate
+
+# Modules (data_cache, config, weibull_cache) live in the 2D Histogram app folder
+_SETTINGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '..', '2D Histogram', 'Settings')
+if _SETTINGS_DIR not in sys.path:
+    sys.path.insert(0, _SETTINGS_DIR)
 
 from data_cache import load_data
 from config import DATASET_MAP
@@ -176,5 +183,5 @@ def run_metrics() -> None:
     print(f"Modeller med R²<0.7 OG KS>0.25: {len(bad_fit)}")
     print(bad_fit.to_string())
 
-# if __name__ == '__main__':
-#     run_metrics()
+if __name__ == '__main__':
+    run_metrics()
