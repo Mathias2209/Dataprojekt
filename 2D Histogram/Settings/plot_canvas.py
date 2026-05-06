@@ -1,0 +1,424 @@
+# plot_canvas.py — matplotlib canvas and all histogram drawing logic
+# ─────────────────────────────────────────────────────────────────────────────
+# This is the heaviest file — it owns draw_histogram() entirely.
+# Edit this file to change anything about how plots look or what is drawn.
+
+import copy
+import re
+import numpy as np
+from scipy.stats import linregress
+from scipy.ndimage import gaussian_filter1d
+
+import matplotlib
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from matplotlib.colors import LogNorm, Normalize
+from PyQt5.QtWidgets import QSizePolicy
+
+from config import (
+    DARK_BG, PANEL_BG, TEXT, SUBTEXT, BORDER, ACCENT, SUCCESS, INFO,
+    SCALE_CONFIG, REF_LINE_DEFS, REF_COLORS, REF_LINESTYLES, RATIO_COL,
+    DATASET_MAP,
+)
+from weibull_cache import get_weibull_posterior, weibull_expected_counts
+from chi import chi_squared_weibull
+import matplotlib.patches as mpatches
+
+class PlotCanvas(FigureCanvas):
+    """Matplotlib canvas embedded in Qt.  Call draw_histogram() to render."""
+
+    def __init__(self):
+        self.fig = Figure(figsize=(8, 5), facecolor='white')
+        super().__init__(self.fig)
+        self.setStyleSheet("background-color:white;")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    # ── Main draw entry point ─────────────────────────────────────────────────
+
+    def draw_histogram(
+        self,
+        data,
+        kassationsårsag: str,
+        bins: int,
+        min_dage: int,
+        max_dage: int,
+        min_vask: int,
+        max_vask: int,
+        x_skala: str,
+        datasæt_navn: str  = '',
+        total: int         = None,
+        log_color: bool    = True,
+        ref_lines: list    = None,
+        vmin: float        = 0.1,
+        min_ratio: float   = None,
+        max_ratio: float   = None,
+        show_percentiles: list = None,
+        plot_type: str     = 'Begge',
+        smooth: int        = 15,
+        log_y_hist: bool   = False,
+        show_regression: bool = True,
+        show_4sigma: bool  = True,
+        show_2sigma: bool  = True,
+        show_survival: bool = True,
+        show_od_legend: bool = True,
+        min_alpha: float   = 0.0,
+        produkt_filter: str = '',
+        produkt_hel_ord: bool = False,
+    ):
+        """
+        Render the histogram (and optionally the overdødelighed curve) into
+        self.fig.  Returns the filtered DataFrame kd so callers can export CSV.
+        """
+        self.fig.clear()
+
+        # ── Filter data ───────────────────────────────────────────────────────
+        kd = (data if kassationsårsag == 'Alle'
+              else data[data['Kassationsårsag (ui)'] == kassationsårsag])
+        if produkt_filter:
+            if produkt_hel_ord:
+                pattern = r'\b' + re.escape(produkt_filter) + r'\b'
+                kd = kd[kd['Produkt - Produkt'].str.contains(
+                    pattern, case=False, na=False, regex=True)]
+            else:
+                kd = kd[kd['Produkt - Produkt'].str.contains(
+                    produkt_filter, case=False, na=False, regex=False)]
+        kd = kd[
+            (kd['Dage i cirkulation'] >= min_dage) &
+            (kd['Dage i cirkulation'] <= max_dage) &
+            (kd['Total antal vask']   >= min_vask) &
+            (kd['Total antal vask']   <= max_vask)
+        ]
+        if RATIO_COL in kd.columns:
+            if min_ratio is not None: kd = kd[kd[RATIO_COL] >= min_ratio]
+            if max_ratio is not None: kd = kd[kd[RATIO_COL] <= max_ratio]
+
+        div    = SCALE_CONFIG[x_skala]['divisor']
+        xlabel = SCALE_CONFIG[x_skala]['label']
+        x_min, x_max = min_dage / div, max_dage / div
+        if x_min >= x_max:  x_max = x_min + 0.1
+        if min_vask >= max_vask: max_vask = min_vask + 1
+
+        full_greens = matplotlib.colormaps['Greens']
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+            'Greens_visible', full_greens(np.linspace(0.35, 1.0, 256))
+        )
+        cmap.set_bad('white'); cmap.set_under('white')
+
+        matplotlib.rcParams.update({
+            'text.color':      'black',
+            'axes.labelcolor': 'black',
+            'xtick.color':     '#444444',
+            'ytick.color':     '#444444',
+        })
+
+        # ── Empty-data guard ──────────────────────────────────────────────────
+        if len(kd) == 0:
+            ax = self.fig.add_subplot(111, facecolor='white')
+            ax.text(0.5, 0.5, 'Ingen data i det valgte interval',
+                    ha='center', va='center', transform=ax.transAxes,
+                    fontsize=13, color='#444444')
+            for spine in ax.spines.values():
+                spine.set_edgecolor('#bbbbbb')
+            self.draw()
+            return kd
+
+        x_data_raw = kd['Dage i cirkulation'].dropna().values
+        x_data     = x_data_raw / div
+        y_data     = kd['Total antal vask'].dropna().values
+
+        # ── Regression ────────────────────────────────────────────────────────
+        stats_text  = ""
+        slope       = intercept = 0
+        can_regress = len(np.unique(x_data)) > 1
+        if can_regress and show_regression:
+            slope, intercept, r_value, _, _ = linregress(x_data, y_data)
+            vask_pr_md = slope if x_skala == 'Måneder' else slope / 12
+            stats_text = (
+                f"Forventet Vask = {slope:.2f} × {x_skala} + {intercept:.2f}  |  "
+                f"Gns: {vask_pr_md:.2f} vaske/md  |  R²: {r_value**2:.3f}"
+            )
+
+        # ── Subplot layout ────────────────────────────────────────────────────
+        ax = ax_hist = None
+        if plot_type == 'Begge':
+            gs      = self.fig.add_gridspec(2, 1, height_ratios=[2.2, 1.3], hspace=0.35)
+            ax      = self.fig.add_subplot(gs[0], facecolor='white')
+            ax_hist = self.fig.add_subplot(gs[1], facecolor='white', sharex=ax)
+        elif plot_type == '2D Histogram':
+            ax      = self.fig.add_subplot(111, facecolor='white')
+        else:
+            ax_hist = self.fig.add_subplot(111, facecolor='white')
+
+        # ── 2D Histogram ──────────────────────────────────────────────────────
+        if ax is not None:
+            self._draw_2d(ax, x_data, y_data, x_min, x_max, min_vask, max_vask,
+                          div, bins, cmap, vmin, log_color, slope, intercept,
+                          can_regress, show_regression, ref_lines, show_percentiles,
+                          kd, xlabel, ax_hist, datasæt_navn, kassationsårsag,
+                          total, len(kd), min_alpha, produkt_filter)
+
+        # ── Overdødelighed ────────────────────────────────────────────────────
+        if ax_hist is not None:
+            # full_days: unfiltered days for this dataset+årsag — Weibull is
+            # always fitted on the full population, not the slider subset.
+            full_df   = DATASET_MAP.get(datasæt_navn)
+            full_days = (
+                full_df['Dage i cirkulation'].dropna().values
+                if full_df is not None else x_data_raw
+            )
+            cache_key = f"{datasæt_navn}__{kassationsårsag}".replace(' ', '_')
+            self._draw_overdødelighed(ax_hist, x_data_raw, x_data, x_min, x_max,
+                                       min_dage, max_dage, div, bins,
+                                       log_y_hist, xlabel, ax,
+                                       datasæt_navn, kassationsårsag, total, len(kd),
+                                       full_days, cache_key,
+                                       show_4sigma, show_2sigma, show_survival,
+                                       show_od_legend, produkt_filter)
+
+        # ── Regression footer text ────────────────────────────────────────────
+        if show_regression and can_regress and ax is not None:
+            self.fig.text(
+                0.5, 0.01, stats_text,
+                ha='center', va='bottom', fontsize=9, color='black',
+                bbox=dict(facecolor='white', edgecolor='#bbbbbb', boxstyle='round,pad=0.4')
+            )
+            self.fig.subplots_adjust(bottom=0.12)
+
+        self.fig.tight_layout()
+        if show_regression and can_regress and ax is not None:
+            self.fig.subplots_adjust(bottom=0.12)
+
+        self.draw()
+        return kd
+
+    # ── Private drawing helpers ───────────────────────────────────────────────
+
+    def _draw_2d(self, ax, x_data, y_data, x_min, x_max,
+                 min_vask, max_vask, div, bins, cmap, vmin, log_color,
+                 slope, intercept, can_regress, show_regression,
+                 ref_lines, show_percentiles, kd, xlabel, ax_hist,
+                 datasæt_navn, kassationsårsag, total, n_kd, min_alpha=0.0,
+                 produkt_filter=''):
+
+        # Compute histogram manually to support per-cell masking (min_alpha)
+        H, xedges, yedges = np.histogram2d(
+            x_data, y_data, bins=bins,
+            range=[[x_min, x_max], [min_vask, max_vask]]
+        )
+        mask = (H < min_alpha) if min_alpha > 0 else (H == 0)
+        H_masked = np.ma.array(H, mask=mask)
+        if log_color:
+            norm = LogNorm(vmin=vmin)
+        else:
+            nonzero_counts = H[H > 0]
+            vmax = float(np.percentile(nonzero_counts, 99)) if nonzero_counts.size > 0 else None
+            norm = Normalize(vmin=vmin, vmax=vmax)
+        mesh = ax.pcolormesh(xedges, yedges, H_masked.T, cmap=cmap, norm=norm)
+        cb = self.fig.colorbar(
+            mesh, ax=ax,
+            label='Antal produkter (log)' if log_color else 'Antal produkter'
+        )
+        cb.ax.yaxis.label.set_color('black')
+        cb.ax.tick_params(colors='black')
+
+        if show_regression and can_regress:
+            x_line = np.array([x_min, x_max])
+            ax.plot(x_line, slope * x_line + intercept,
+                    color='#222222', lw=2, ls='-', label='Best Fit', alpha=0.85)
+
+        if ref_lines:
+            xs = np.linspace(x_min, x_max, 300)
+            for i, (interval_days, lbl) in enumerate(REF_LINE_DEFS):
+                if lbl in ref_lines:
+                    ax.plot(xs, (xs * div) / interval_days,
+                            color=REF_COLORS[i], lw=1.5,
+                            ls=REF_LINESTYLES[i], label=lbl, alpha=0.9)
+
+        if ref_lines or (show_regression and can_regress):
+            ax.legend(fontsize=8, loc='lower left', bbox_to_anchor=(1.0, 1),
+                      facecolor='white', edgecolor='#bbbbbb', labelcolor='black',
+                      borderaxespad=0)
+
+        if show_percentiles:
+            col = kd['Dage i cirkulation']
+            for label, val, ls, y_frac in [
+                ('25%',    col.quantile(0.25), '--', 0.85),
+                ('Median', col.median(),       '-',  0.97),
+                ('75%',    col.quantile(0.75), '--', 0.85),
+            ]:
+                if label not in show_percentiles: continue
+                vx = val / div
+                if x_min < vx < x_max:
+                    ax.axvline(vx, color='#222222', lw=1.5, ls=ls, alpha=0.85)
+                    ax.text(vx, max_vask * y_frac,
+                            f'{label}\n{val / 365.25:.1f} år',
+                            color='#222222', fontsize=7.5, ha='center', va='top',
+                            bbox=dict(boxstyle='round,pad=0.2',
+                                      fc='white', alpha=0.8, ec='#bbbbbb'))
+
+        title   = f'{datasæt_navn} — {kassationsårsag}' if datasæt_navn else kassationsårsag
+        if produkt_filter:
+            title += f' — "{produkt_filter}"'
+        pct_str = f'  ({100 * n_kd / total:.1f}% af datasæt)' if total else ''
+        ax.set_title(f'{title}\n{n_kd} produkter{pct_str}', color='black', fontsize=11)
+        ax.set_ylabel('Antal Vaske', color='#444444')
+        if ax_hist is None:
+            ax.set_xlabel(xlabel, color='#444444')
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(min_vask, max_vask)
+        ax.tick_params(colors='#444444')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#bbbbbb')
+
+    def _draw_overdødelighed(self, ax_hist, x_data_raw, x_data,
+                              x_min, x_max, min_dage, max_dage,
+                              div, bins, log_y_hist, xlabel, ax,
+                              datasæt_navn, kassationsårsag, total, n_kd,
+                              full_days, cache_key,
+                              show_4sigma=True, show_2sigma=True, show_survival=True,
+                              show_od_legend=True, produkt_filter=''):
+
+        # ── Day-level observed counts + Gaussian smoothing ───────────────────
+        # Aggregate at 1-day resolution so spike positions are exact, then
+        # smooth with a Gaussian whose FWHM equals the current bin width.
+        # This removes the bin-boundary sensitivity of a plain histogram.
+        days      = np.arange(int(min_dage), int(max_dage) + 1)   # 1-day grid
+        origin    = int(min_dage)
+        idx       = np.clip(
+            np.round(x_data_raw).astype(int) - origin, 0, len(days) - 1
+        )
+        day_counts = np.bincount(idx, minlength=len(days)).astype(float)
+
+        # sigma (days) derived from bins slider: FWHM ≈ bin_width
+        bin_width = (max_dage - min_dage) / bins          # in days
+        sigma     = max(bin_width / 2.355, 0.5)           # sigma in days
+        counts    = gaussian_filter1d(day_counts, sigma=sigma)
+        x_hist_vals = days / div
+
+        # ── Bayesian Weibull fit on the FULL unfiltered dataset ───────────────
+        # get_weibull_posterior() loads from cache if available, otherwise
+        # runs PyMC MCMC (draws=500, tune=500, chains=2) and caches result.
+        posterior = get_weibull_posterior(full_days, cache_key)
+        alpha_samples = posterior['alpha_samples']
+        beta_samples  = posterior['beta_samples']
+
+        # Evaluate Weibull at daily resolution (bin_width=1 day).
+        # Both the baseline and the smoothed observed are now on a per-day
+        # count scale, so they compare directly on the y-axis.
+        curves = weibull_expected_counts(
+            alpha_samples, beta_samples,
+            days.astype(float), 1.0,
+            n_total=len(x_data_raw),
+        )
+        baseline = np.where(curves['mean']  < 1e-9, 1e-9, curves['mean'])
+        lower    = np.where(curves['lower'] < 1e-9, 1e-9, curves['lower'])
+        upper    = curves['upper']
+
+        # ── Poisson uncertainty bands on top of Weibull credible band ─────────
+        # Combine two sources of uncertainty:
+        #   1. Parameter uncertainty  → 95 % credible band (shaded)
+        #   2. Poisson sampling noise → ±2σ and ±4σ lines above the mean
+        #
+        # Because the observed line is Gaussian-smoothed with sigma σ days,
+        # its noise is reduced by sqrt(2√π·σ) relative to raw daily counts.
+        # The threshold lines are adjusted to match that reduced noise level
+        # so that "2σ" still means 2 standard deviations above baseline.
+        poisson_std = np.sqrt(baseline / (2.0 * np.sqrt(np.pi) * sigma))
+
+        # 95 % posterior credible band (parameter uncertainty)
+        ax_hist.fill_between(x_hist_vals, lower, upper,
+                             alpha=0.20, color=INFO, label='95% kredibelt interval')
+
+        # Threshold lines (Poisson noise around the posterior mean)
+        if show_4sigma:
+            ax_hist.plot(x_hist_vals, baseline + 4 * poisson_std,
+                         color='#f38ba8', lw=1.2, ls='-.', alpha=0.85, label='4σ')
+        if show_2sigma:
+            ax_hist.plot(x_hist_vals, baseline + 2 * poisson_std,
+                         color='#fab387', lw=1.2, ls='--', alpha=0.85, label='2σ')
+
+        # Posterior mean Weibull baseline
+        alpha_mean = float(alpha_samples.mean())
+        beta_mean  = float(beta_samples.mean())
+        method_lbl = posterior.get('method', 'mcmc')
+        fit_lbl    = (f"Weibull MCMC  α={alpha_mean:.2f}, "
+                      f"β={beta_mean/div:.0f} {xlabel.split()[0].lower()}")
+        if method_lbl == 'mle_fallback':
+            fit_lbl = fit_lbl.replace('MCMC', 'MLE')
+        weibull_line, = ax_hist.plot(x_hist_vals, baseline,
+                                     color=INFO, lw=2.2, label=fit_lbl)
+
+        # Observed counts
+        ax_hist.plot(x_hist_vals, counts,
+                     color='black', lw=1.8, alpha=0.92, label='Registreret')
+
+        # Yellow fill where observed exceeds 2σ threshold
+        if show_2sigma:
+            over2 = counts > (baseline + 2 * poisson_std)
+            if over2.any():
+                ax_hist.fill_between(x_hist_vals, baseline + 2 * poisson_std, counts,
+                                     where=over2, alpha=0.30,
+                                     color='#f9e2af', label='Over tærskel')
+
+        ax_hist.set_ylabel('Antal kasseret', color='black')
+        ax_hist.tick_params(axis='y', labelcolor='black')
+        ax_hist.set_facecolor('white')
+        for spine in ax_hist.spines.values():
+            spine.set_edgecolor('#bbbbbb')
+
+        if ax is None:
+            title   = f'{datasæt_navn} — {kassationsårsag}' if datasæt_navn else kassationsårsag
+            if produkt_filter:
+                title += f' — "{produkt_filter}"'
+            pct_str = f'  ({100 * n_kd / total:.1f}% af datasæt)' if total else ''
+            ax_hist.set_title(
+                f'{title}\n{n_kd} produkter{pct_str}\nKassations-profil (Overdødelighed)',
+                color='black', fontsize=11)
+        else:
+            ax_hist.set_title('Kassations-profil (Overdødelighed)',
+                               color='black', fontsize=10, pad=8)
+
+        if log_y_hist:
+            ax_hist.set_yscale('log')
+
+        # Survival curve (twin y-axis) — optional
+        chi2 = chi_squared_weibull(DATASET_MAP[datasæt_navn], cache_key)
+        chi2_patch = mpatches.Patch(color='none', label=f'χ² = {chi2:.1f}')
+
+        if show_survival:
+            ax_surv       = ax_hist.twinx()
+            x_sorted      = np.sort(x_data)
+            survival_prob = 100 * (1 - np.arange(1, len(x_sorted) + 1) / len(x_sorted))
+            ax_surv.plot(x_sorted, survival_prob, color=SUCCESS, lw=2.0, label='Overlevelse (%)')
+            ax_surv.set_ylabel('Overlevelse (%)', color=SUCCESS)
+            ax_surv.tick_params(axis='y', labelcolor=SUCCESS)
+            ax_surv.set_ylim(0, 105)
+            for spine in ax_surv.spines.values():
+                spine.set_edgecolor('#bbbbbb')
+
+        # Always-visible entries: Weibull fit + χ²
+        always_h = [weibull_line, chi2_patch]
+        always_l = [fit_lbl, f'χ² = {chi2:.1f}']
+
+        if show_od_legend:
+            lines_h, lines_l = ax_hist.get_legend_handles_labels()
+            # exclude weibull line (already in always_h)
+            other_h = [h for h, l in zip(lines_h, lines_l) if l != fit_lbl]
+            other_l = [l for l in lines_l if l != fit_lbl]
+            if show_survival:
+                surv_h, surv_l = ax_surv.get_legend_handles_labels()
+                other_h += surv_h
+                other_l += surv_l
+            final_h = other_h + always_h
+            final_l = other_l + always_l
+        else:
+            final_h, final_l = always_h, always_l
+
+        ncols = 2 if show_od_legend and show_survival else 1
+        ax_hist.legend(final_h, final_l, loc='upper right', fontsize=8,
+                       facecolor='white', edgecolor='#bbbbbb',
+                       labelcolor='black', ncol=ncols)
+
+        ax_hist.set_xlabel(xlabel, color='#444444')
+        ax_hist.set_xlim(x_min, x_max)
+        ax_hist.grid(True, alpha=0.25, linestyle='--', color='#cccccc')

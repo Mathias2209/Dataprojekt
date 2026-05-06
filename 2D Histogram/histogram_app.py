@@ -1,0 +1,284 @@
+# histogram_app.py — MainWindow, entry point, and bootstrap logic
+# ─────────────────────────────────────────────────────────────────────────────
+# Run with:  python histogram_app.py
+# Requires:  pip install PyQt5 matplotlib numpy pandas scipy pyarrow
+#
+# File layout:
+#   histogram_app.py   ← you are here (MainWindow + main)
+#   config.py          ← colours, constants, DATASET_MAP
+#   data_cache.py      ← load / cache / invalidate data
+#   widgets.py         ← styled_label, hr, button/slider helpers
+#   loading_screen.py  ← animated splash screen
+#   plot_canvas.py     ← PlotCanvas + draw_histogram()
+#   plot_widget.py     ← PlotWidget (canvas + header)
+#   control_panel.py   ← ControlPanel + make_filter_panel()
+#   panels.py          ← GraphPanel, DualGraphPanel 
+
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "Settings"))
+
+import matplotlib
+matplotlib.use('Qt5Agg')
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget,
+    QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget, QMessageBox,
+)
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QColor, QPalette
+
+from config import DARK_BG, PANEL_BG, ACCENT, TEXT, SUBTEXT, BORDER, DANGER, INFO
+from data_cache import load_data, invalidate_cache
+from weibull_cache import prefetch_all_weibull
+from loading_screen import LoadingScreen
+from widgets import styled_label, hr, top_btn, top_btn_style
+from panels import GraphPanel, DualGraphPanel
+
+
+# ── MainWindow ────────────────────────────────────────────────────────────────
+
+class MainWindow(QMainWindow):
+    def __init__(self, demo_mode: bool = False, on_refresh=None):
+        super().__init__()
+        self._demo_mode  = demo_mode
+        self._on_refresh = on_refresh
+
+        self.setWindowTitle("2D Histogram")
+        self.resize(1400, 820)
+        self.setStyleSheet(f"QMainWindow {{ background:{DARK_BG}; }}")
+
+        central = QWidget()
+        central.setStyleSheet(f"background:{DARK_BG};")
+        self.setCentralWidget(central)
+        self._main_layout = QVBoxLayout(central)
+        self._main_layout.setContentsMargins(10, 10, 10, 10)
+        self._main_layout.setSpacing(8)
+        main_layout = self._main_layout
+
+        # ── Top bar ────────────────────────────────────────────────────────────
+        self._top_bar = QWidget()
+        self._top_bar.setStyleSheet(f"background:{DARK_BG};")
+        top = QHBoxLayout(self._top_bar)
+        top.setContentsMargins(0, 0, 0, 0)
+        top.addWidget(styled_label("  2D Histogram",
+                                   bold=True, size=14, color=ACCENT))
+        top.addStretch()
+
+        self.view_btn_1 = top_btn("1 Graf",  active=True)
+        self.view_btn_2 = top_btn("2 Grafer", active=False)
+        top.addWidget(self.view_btn_1)
+        top.addWidget(self.view_btn_2)
+
+        self._fs_btn = top_btn("Fuldskærm", active=False)
+        self._fs_btn.setToolTip("Skjul kontrolpaneler — tryk Escape for at afslutte")
+        self._fs_btn.clicked.connect(self._toggle_fullscreen)
+        top.addWidget(self._fs_btn)
+
+        refresh_btn = QPushButton("Opdater data")
+        refresh_btn.setToolTip("Slet cache og genindlæs fra dataloader, derefter genstart")
+        refresh_btn.setStyleSheet(
+            f"QPushButton {{ background:#141414; color:{SUBTEXT};"
+            f" border:1px solid {BORDER}; border-radius:5px; padding:5px 14px; }}"
+            f"QPushButton:hover {{ background:{SUBTEXT}; color:{DARK_BG}; }}"
+        )
+        if on_refresh:
+            refresh_btn.clicked.connect(on_refresh)
+        top.addWidget(refresh_btn)
+
+        if demo_mode:
+            top.addWidget(styled_label("  ⚠ DEMO-tilstand  ", color=DANGER, size=10))
+
+        main_layout.addWidget(self._top_bar)
+        self._top_hr = hr()
+        main_layout.addWidget(self._top_hr)
+
+        self._fullscreen = False
+
+        # ── Single-graph tabs (Graf A / Graf B) ───────────────────────────────
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(
+            f"QTabWidget::pane {{ border:none; background:{DARK_BG}; }}"
+            f"QTabBar::tab {{ background:{PANEL_BG}; color:{SUBTEXT}; padding:6px 18px;"
+            f" border:1px solid {BORDER}; border-bottom:none; border-radius:4px 4px 0 0; }}"
+            f"QTabBar::tab:selected {{ background:{ACCENT}; color:{DARK_BG}; font-weight:bold; }}"
+        )
+        self.panel_a = GraphPanel('A')
+        self.panel_b = GraphPanel('B')
+        self.tabs.addTab(self.panel_a, "Graf A")
+        self.tabs.addTab(self.panel_b, "Graf B")
+
+        # ── Dual-graph panel ──────────────────────────────────────────────────
+        self.dual_panel = DualGraphPanel()
+
+        self.stack = QWidget()
+        stack_layout = QVBoxLayout(self.stack)
+        stack_layout.setContentsMargins(0, 0, 0, 0)
+        stack_layout.addWidget(self.tabs)
+        stack_layout.addWidget(self.dual_panel)
+        self.dual_panel.hide()
+
+        main_layout.addWidget(self.stack)
+
+        self.view_btn_1.clicked.connect(lambda: self._set_view(1))
+        self.view_btn_2.clicked.connect(lambda: self._set_view(2))
+
+    def _set_view(self, n: int) -> None:
+        if n == 2:
+            self.dual_panel.ctrl_a.apply_settings(self.panel_a.ctrl.get_settings())
+            self.dual_panel.ctrl_b.apply_settings(self.panel_b.ctrl.get_settings())
+        elif n == 1:
+            self.panel_a.ctrl.apply_settings(self.dual_panel.ctrl_a.get_settings())
+            self.panel_b.ctrl.apply_settings(self.dual_panel.ctrl_b.get_settings())
+        self.view_btn_1.setChecked(n == 1)
+        self.view_btn_2.setChecked(n == 2)
+        self.view_btn_1.setStyleSheet(top_btn_style(n == 1))
+        self.view_btn_2.setStyleSheet(top_btn_style(n == 2))
+        self.tabs.setVisible(n == 1)
+        self.dual_panel.setVisible(n == 2)
+        if self._fullscreen:
+            self._apply_fullscreen_to_panels(True)
+
+    def _toggle_fullscreen(self) -> None:
+        self._set_fullscreen(not self._fullscreen)
+
+    def _set_fullscreen(self, fs: bool) -> None:
+        self._fullscreen = fs
+        self._fs_btn.setChecked(fs)
+        self._fs_btn.setStyleSheet(top_btn_style(fs))
+        self._top_bar.setVisible(not fs)
+        self._top_hr.setVisible(not fs)
+        self._main_layout.setContentsMargins(0 if fs else 10,
+                                             0 if fs else 10,
+                                             0 if fs else 10,
+                                             0 if fs else 10)
+        self._apply_fullscreen_to_panels(fs)
+        if fs:
+            self.showFullScreen()
+        else:
+            self.showNormal()
+
+    def _apply_fullscreen_to_panels(self, fs: bool) -> None:
+        self.panel_a.set_fullscreen(fs)
+        self.panel_b.set_fullscreen(fs)
+        self.dual_panel.set_fullscreen(fs)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape:
+            if self._fullscreen:
+                # First Escape: show controls back, stay OS fullscreen
+                self._fullscreen = False
+                self._fs_btn.setChecked(False)
+                self._fs_btn.setStyleSheet(top_btn_style(False))
+                self._top_bar.setVisible(True)
+                self._top_hr.setVisible(True)
+                self._main_layout.setContentsMargins(10, 10, 10, 10)
+                self._apply_fullscreen_to_panels(False)
+            elif self.isFullScreen():
+                # Second Escape: exit OS fullscreen
+                self.showNormal()
+        else:
+            super().keyPressEvent(event)
+
+
+# ── Application entry point ───────────────────────────────────────────────────
+
+def _apply_dark_palette(app: QApplication) -> None:
+    app.setStyle("Fusion")
+    palette = QPalette()
+    palette.setColor(QPalette.Window,          QColor(DARK_BG))
+    palette.setColor(QPalette.WindowText,      QColor(TEXT))
+    palette.setColor(QPalette.Base,            QColor("#141414"))
+    palette.setColor(QPalette.AlternateBase,   QColor(PANEL_BG))
+    palette.setColor(QPalette.ToolTipBase,     QColor(TEXT))
+    palette.setColor(QPalette.ToolTipText,     QColor(DARK_BG))
+    palette.setColor(QPalette.Text,            QColor(TEXT))
+    palette.setColor(QPalette.Button,          QColor(PANEL_BG))
+    palette.setColor(QPalette.ButtonText,      QColor(TEXT))
+    palette.setColor(QPalette.Highlight,       QColor(ACCENT))
+    palette.setColor(QPalette.HighlightedText, QColor(DARK_BG))
+    app.setPalette(palette)
+
+
+def main() -> None:
+    app = QApplication(sys.argv)
+    _apply_dark_palette(app)
+
+    splash = LoadingScreen()
+    splash.show()
+    app.processEvents()
+
+    def step1_data(force_refresh: bool = False) -> None:
+        # Progress map:
+        #   0%  →  start
+        #  10%  →  cache found / dataloader starting
+        #  70%  →  data loaded, about to save cache
+        #  80%  →  data cache saved/read — begin Weibull pre-fitting
+        # 80–90% → Weibull fits (spread across all combinations)
+        #  90%  →  all Weibull fits done — building UI
+        # 100%  →  ready
+
+        def _progress_cb(msg: str) -> None:
+            """Route data_cache status messages to the progress bar."""
+            if 'cache' in msg.lower() and 'indlæser' in msg.lower():
+                splash.set_progress(10, msg)
+            elif 'første opstart' in msg.lower() or 'dataloader' in msg.lower():
+                splash.set_progress(10, msg)
+            elif 'demo' in msg.lower():
+                splash.set_progress(10, msg)
+            elif 'gemmer cache' in msg.lower():
+                splash.set_progress(70, msg)
+            elif 'cache gemt' in msg.lower() or 'cache indlæst' in msg.lower():
+                splash.set_progress(80, msg)
+            else:
+                splash.set_status(msg)
+
+        splash.set_progress(0, "Starter…")
+        real_data = load_data(force_refresh=force_refresh,
+                              status_cb=_progress_cb)
+        demo_mode = not real_data
+        QTimer.singleShot(0, lambda: step1b_weibull(demo_mode))
+
+    def step1b_weibull(demo_mode: bool) -> None:
+        """Pre-fit all Weibull models in the background before opening the UI."""
+        if not demo_mode:
+            prefetch_all_weibull(
+                status_cb=splash.set_status,
+                progress_cb=splash.set_progress,
+            )
+        QTimer.singleShot(0, lambda: step2_build(demo_mode))
+
+    def step2_build(demo_mode: bool) -> None:
+        splash.set_progress(90, "Bygger brugerfladen…")
+
+        win = MainWindow(
+            demo_mode=demo_mode,
+            on_refresh=lambda: _do_refresh(win),
+        )
+        app._main_win = win
+        splash.set_progress(100, "Klar!")
+        QTimer.singleShot(350, lambda: _show(win))
+
+    def _do_refresh(win: MainWindow) -> None:
+        reply = QMessageBox.question(
+            win, "Opdater data",
+            "Dette sletter cachen og genindlæser data fra dataloader.\n"
+            "Programmet genstarter. Fortsæt?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            invalidate_cache()
+            import subprocess
+            subprocess.Popen([sys.executable] + sys.argv)
+            app.quit()
+
+    def _show(win: MainWindow) -> None:
+        splash.close()
+        win.show()
+
+    QTimer.singleShot(50, lambda: step1_data(force_refresh=False))
+    sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    main()

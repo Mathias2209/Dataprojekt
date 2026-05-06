@@ -1,0 +1,804 @@
+# control_panel.py — ControlPanel (settings) and its filter side-panel
+# ─────────────────────────────────────────────────────────────────────────────
+# This file owns all the left-panel controls: dataset selector, kassationsårsag,
+# graftype, bins, smoothing, log toggles, load/save/delete, and the sync group.
+# It also owns make_filter_panel() which builds the right-panel filter controls.
+
+import os
+import json
+from datetime import datetime
+
+from PyQt5.QtWidgets import (
+    QScrollArea, QWidget, QVBoxLayout, QHBoxLayout,
+    QCheckBox, QPushButton, QLineEdit,
+    QTextEdit, QGroupBox, QButtonGroup, QMessageBox,
+)
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+
+from config import (
+    PANEL_BG, DARK_BG, BORDER, ACCENT, TEXT, SUBTEXT, SUCCESS, DANGER, INFO,
+    SCALE_CONFIG, REF_LINE_DEFS, REF_COLORS, RATIO_COL,
+    SAVE_DIR, DEFAULT_MAX_DAGE, MAX_DAGE, DEFAULT_MAX_VASK, DATASET_MAP,
+)
+from widgets import (
+    styled_label, hr, styled_btn, toggle_style, style_combo, NoScrollComboBox,
+    make_slider_with_edit, make_slider_with_label, get_saved_folders,
+)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def get_arsager(df) -> list:
+    return ['Alle'] + sorted(df['Kassationsårsag (ui)'].dropna().unique().tolist())
+
+
+def ratio_range(df) -> tuple:
+    import numpy as np
+    if RATIO_COL not in df.columns:
+        return 0.0, 10.0
+    col = df[RATIO_COL].replace([np.inf, -np.inf], float('nan')).dropna()
+    if len(col) == 0:
+        return 0.0, 10.0
+    return 0.0, round(float(col.quantile(0.999)), 2)
+
+
+# ── ControlPanel ──────────────────────────────────────────────────────────────
+
+class ControlPanel(QScrollArea):
+    """
+    Left panel: dataset, kassationsårsag, graftype, bins, log toggles,
+    load/save section, and (in 2-graf mode) the sync group.
+    """
+    settings_changed = pyqtSignal()
+
+    def __init__(self, letter: str, parent=None):
+        super().__init__(parent)
+        self.letter = letter
+        self.setWidgetResizable(True)
+        self.setFixedWidth(620)
+        self.setStyleSheet(
+            f"QScrollArea {{ background:{PANEL_BG}; border:1px solid {BORDER}; border-radius:8px; }}"
+            f"QScrollBar:vertical {{ background:{DARK_BG}; width:8px; border-radius:4px; }}"
+            f"QScrollBar::handle:vertical {{ background:{BORDER}; border-radius:4px; }}"
+        )
+
+        container = QWidget()
+        container.setStyleSheet(f"background:{PANEL_BG};")
+        columns = QHBoxLayout(container)
+        columns.setContentsMargins(0, 0, 0, 0)
+        columns.setSpacing(0)
+
+        left_col = QWidget()
+        left_col.setStyleSheet(f"background:{PANEL_BG};")
+        layout = QVBoxLayout(left_col)
+        layout.setSpacing(6)
+        layout.setContentsMargins(10, 10, 10, 10)
+        columns.addWidget(left_col)
+
+        layout.addWidget(styled_label(f"Graf {letter} — Indstillinger",
+                                      bold=True, size=12, color=ACCENT))
+        layout.addWidget(hr())
+
+        # ── Load / Delete ─────────────────────────────────────────────────────
+        layout.addWidget(styled_label("Indlæs / Slet", bold=True))
+        self.load_combo = NoScrollComboBox()
+        style_combo(self.load_combo)
+        self._refresh_saved()
+        row_load = QHBoxLayout()
+        self.load_btn    = styled_btn("Indlæs", ACCENT)
+        self.refresh_btn = styled_btn("🔄", SUBTEXT, w=36)
+        self.delete_btn  = styled_btn("🗑",    DANGER,  w=36)
+        row_load.addWidget(self.load_btn)
+        row_load.addWidget(self.refresh_btn)
+        row_load.addWidget(self.delete_btn)
+        layout.addWidget(self.load_combo)
+        layout.addLayout(row_load)
+        self.io_label = styled_label("", color=SUCCESS)
+        layout.addWidget(self.io_label)
+        layout.addWidget(hr())
+
+        # ── Dataset & kassationsårsag ─────────────────────────────────────────
+        layout.addWidget(styled_label("Datasæt", bold=True))
+        self.ds_combo = NoScrollComboBox()
+        style_combo(self.ds_combo)
+        for name in DATASET_MAP:
+            self.ds_combo.addItem(name)
+        layout.addWidget(self.ds_combo)
+
+        layout.addWidget(styled_label("Kassationsårsag", bold=True))
+        self.ar_combo = NoScrollComboBox()
+        style_combo(self.ar_combo)
+        self._update_arsager()
+        layout.addWidget(self.ar_combo)
+
+        search_header = QHBoxLayout()
+        search_header.addWidget(styled_label("Søg produkt", bold=True))
+        search_header.addStretch()
+        self.produkt_hel_ord_cb = QCheckBox("Hele ord")
+        self.produkt_hel_ord_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        search_header.addWidget(self.produkt_hel_ord_cb)
+        layout.addLayout(search_header)
+        self.produkt_search = QLineEdit()
+        self.produkt_search.setPlaceholderText("Fx. blå, herre, cotton…")
+        self.produkt_search.setStyleSheet(
+            f"QLineEdit {{ background:#141414; color:{TEXT}; border:1px solid {BORDER};"
+            f" border-radius:4px; padding:4px; }}"
+            f"QLineEdit:focus {{ border:1px solid {ACCENT}; }}"
+        )
+        layout.addWidget(self.produkt_search)
+        self._search_timer = QTimer()
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(400)
+        self._search_timer.timeout.connect(self.settings_changed)
+        self.produkt_search.textChanged.connect(self._search_timer.start)
+        self.produkt_hel_ord_cb.stateChanged.connect(self.settings_changed)
+
+        # ── Graftype ──────────────────────────────────────────────────────────
+        layout.addWidget(styled_label("Graftype", bold=True))
+        self.plot_type_combo = NoScrollComboBox()
+        style_combo(self.plot_type_combo)
+        for pt in ['Begge', '2D Histogram', 'Overdødelighed']:
+            self.plot_type_combo.addItem(pt)
+        layout.addWidget(self.plot_type_combo)
+        layout.addWidget(hr())
+
+        # ── Bins ──────────────────────────────────────────────────────────────
+        bins_group = QGroupBox("Bins")
+        bins_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        bins_inner = QVBoxLayout()
+        bins_inner.addWidget(styled_label("Bins"))
+        self.bins_slider, bins_lbl = make_slider_with_label(60, 5, 150, step=5)
+        self.bins_val_lbl = bins_lbl
+        r_bins = QHBoxLayout()
+        r_bins.addWidget(self.bins_slider)
+        r_bins.addWidget(bins_lbl)
+        bins_inner.addLayout(r_bins)
+        bins_group.setLayout(bins_inner)
+        layout.addWidget(bins_group)
+
+        # ── Visning & Farveskala ──────────────────────────────────────────────
+        color_group = QGroupBox("Farveskala")
+        color_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        color_inner = QVBoxLayout()
+
+        self.log_cb = QCheckBox("Logaritmisk farveskala (2D)")
+        self.log_cb.setChecked(True)
+        self.log_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        color_inner.addWidget(self.log_cb)
+
+        self.show_reg_cb = QCheckBox("Vis regressionsmodel")
+        self.show_reg_cb.setChecked(False)
+        self.show_reg_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        color_inner.addWidget(self.show_reg_cb)
+
+        color_group.setLayout(color_inner)
+        layout.addWidget(color_group)
+
+        layout.addWidget(hr())
+
+        # ── Note / folder / save ──────────────────────────────────────────────
+        layout.addWidget(styled_label("Note (valgfrit)", bold=True))
+        self.note_edit = QTextEdit()
+        self.note_edit.setFixedHeight(60)
+        self.note_edit.setStyleSheet(
+            f"background:#141414; color:{TEXT}; border:1px solid {BORDER}; border-radius:4px;"
+        )
+        layout.addWidget(self.note_edit)
+
+        layout.addWidget(styled_label("Mappenavn", bold=True))
+        self.folder_edit = QLineEdit()
+        self.folder_edit.setPlaceholderText("Lad stå tomt for auto-navn...")
+        self.folder_edit.setStyleSheet(
+            f"background:#141414; color:{TEXT}; border:1px solid {BORDER};"
+            f" border-radius:4px; padding:4px;"
+        )
+        layout.addWidget(self.folder_edit)
+
+        row_save = QHBoxLayout()
+        self.save_btn = styled_btn("Gem", SUCCESS)
+        row_save.addWidget(self.save_btn)
+        layout.addLayout(row_save)
+        layout.addStretch()
+        self._columns = columns
+        self.setWidget(container)
+
+        # ── Signals ───────────────────────────────────────────────────────────
+        self.ds_combo.currentTextChanged.connect(self._on_dataset_changed)
+        self.ar_combo.currentTextChanged.connect(self.settings_changed)
+        self.plot_type_combo.currentTextChanged.connect(self.settings_changed)
+        self.bins_slider.valueChanged.connect(
+            lambda v: [bins_lbl.setText(str(v)), self.settings_changed.emit()])
+        self.bins_slider.valueChanged.connect(
+            lambda v: self._snap_slider(self.bins_slider, 5))
+        self.log_cb.stateChanged.connect(self.settings_changed)
+        self.show_reg_cb.stateChanged.connect(self.settings_changed)
+
+        self.load_btn.clicked.connect(self._do_load)
+        self.refresh_btn.clicked.connect(self._refresh_saved)
+        self.delete_btn.clicked.connect(self._do_delete)
+
+    # ── Filter panel factory ──────────────────────────────────────────────────
+
+    def make_filter_panel(self) -> None:
+        """Build the right-column filter controls inside this panel's scroll area."""
+        right_col = QWidget()
+        right_col.setStyleSheet(f"background:{PANEL_BG}; border-left:1px solid {BORDER};")
+        layout = QVBoxLayout(right_col)
+        layout.setSpacing(6)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self._columns.addWidget(right_col)
+
+        layout.addWidget(styled_label("Filtrering", bold=True, size=12, color=ACCENT))
+        layout.addWidget(hr())
+
+        # X-skala buttons
+        layout.addWidget(styled_label("X-akse skala", bold=True))
+        skala_row = QHBoxLayout()
+        self.skala_btns: dict[str, QPushButton] = {}
+        self.skala_group = QButtonGroup()
+        for i, s in enumerate(['Måneder', 'År']):
+            btn = QPushButton(s)
+            btn.setCheckable(True)
+            btn.setChecked(s == 'År')
+            btn.setStyleSheet(toggle_style(s == 'År'))
+            self.skala_btns[s] = btn
+            self.skala_group.addButton(btn, i)
+            skala_row.addWidget(btn)
+        layout.addLayout(skala_row)
+        self.skala_group.buttonClicked.connect(self._on_skala_changed)
+        layout.addWidget(hr())
+
+        # Dage sliders
+        df       = DATASET_MAP[self.ds_combo.currentText()]
+        dage_max = min(int(df['Dage i cirkulation'].max()) + 100, MAX_DAGE)
+        dage_group = QGroupBox("År i cirkulation")
+        dage_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        dage_inner = QVBoxLayout()
+        self._dage_section_label = dage_group  # kept for external label updates via setTitle
+        self.min_dage_slider, self.min_dage_edit = make_slider_with_edit(
+            0, 0, dage_max, step=50)
+        self.max_dage_slider, self.max_dage_edit = make_slider_with_edit(
+            min(DEFAULT_MAX_DAGE, dage_max), 0, dage_max, step=50)
+        for lbl_txt, sl, ed in [("Min", self.min_dage_slider, self.min_dage_edit),
+                                 ("Max", self.max_dage_slider, self.max_dage_edit)]:
+            r = QHBoxLayout()
+            r.addWidget(styled_label(lbl_txt))
+            r.addWidget(sl, stretch=1)
+            r.addWidget(ed)
+            dage_inner.addLayout(r)
+        dage_group.setLayout(dage_inner)
+        layout.addWidget(dage_group)
+
+        # Vask sliders
+        vask_max = int(df['Total antal vask'].max()) + 10
+        vask_group = QGroupBox("Antal Vaske")
+        vask_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        vask_inner = QVBoxLayout()
+        self.min_vask_slider, self.min_vask_edit = make_slider_with_edit(0, 0, vask_max, step=50)
+        self.max_vask_slider, self.max_vask_edit = make_slider_with_edit(
+            DEFAULT_MAX_VASK, 0, vask_max, step=50)
+        for lbl_txt, sl, ed in [("Min", self.min_vask_slider, self.min_vask_edit),
+                                 ("Max", self.max_vask_slider, self.max_vask_edit)]:
+            r = QHBoxLayout()
+            r.addWidget(styled_label(lbl_txt))
+            r.addWidget(sl, stretch=1)
+            r.addWidget(ed)
+            vask_inner.addLayout(r)
+        vask_group.setLayout(vask_inner)
+        layout.addWidget(vask_group)
+
+        # Ratio group
+        rmin, rmax = ratio_range(df)
+        self.ratio_group = QGroupBox("Vaske Pr. Måned")
+        self.ratio_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        ratio_layout = QVBoxLayout()
+        self.min_ratio_slider, self.min_ratio_edit = make_slider_with_edit(
+            int(rmin * 100), int(rmin * 100), int(rmax * 100), fmt='ratio', step=50)
+        self.max_ratio_slider, self.max_ratio_edit = make_slider_with_edit(
+            int(rmax * 100), int(rmin * 100), int(rmax * 100), fmt='ratio', step=50)
+        for lbl_txt, sl, ed in [("Min", self.min_ratio_slider, self.min_ratio_edit),
+                                 ("Max", self.max_ratio_slider, self.max_ratio_edit)]:
+            r = QHBoxLayout()
+            r.addWidget(styled_label(lbl_txt))
+            r.addWidget(sl, stretch=1)
+            r.addWidget(ed)
+            ratio_layout.addLayout(r)
+        self.ratio_group.setLayout(ratio_layout)
+        layout.addWidget(self.ratio_group)
+        self.ratio_group.setVisible(RATIO_COL in df.columns)
+
+        # Reference lines
+        ref_group = QGroupBox("VPM-linjer")
+        ref_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        ref_inner = QVBoxLayout()
+        self.ref_cbs: dict[str, QCheckBox] = {}
+        for i, (_, lbl) in enumerate(REF_LINE_DEFS):
+            cb = QCheckBox(lbl)
+            cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+            cb.stateChanged.connect(self.settings_changed)
+            self.ref_cbs[lbl] = cb
+            ref_inner.addWidget(cb)
+        ref_group.setLayout(ref_inner)
+        layout.addWidget(ref_group)
+
+        # Percentile lines
+        pct_group = QGroupBox("Kvantillinjer")
+        pct_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        pct_inner = QVBoxLayout()
+        self.pct_cbs: dict[str, QCheckBox] = {}
+        for lbl in ['25%', 'Median', '75%']:
+            cb = QCheckBox(lbl)
+            cb.setChecked(False)
+            cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+            cb.stateChanged.connect(self.settings_changed)
+            self.pct_cbs[lbl] = cb
+            pct_inner.addWidget(cb)
+        pct_group.setLayout(pct_inner)
+        layout.addWidget(pct_group)
+
+        # Overdødelighed toggles
+        od_group = QGroupBox("Overdødelighed")
+        od_group.setStyleSheet(
+            f"QGroupBox {{ color:{TEXT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        od_inner = QVBoxLayout()
+
+        self.show_4sigma_cb = QCheckBox("4σ-tærskel")
+        self.show_4sigma_cb.setChecked(True)
+        self.show_4sigma_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_4sigma_cb.stateChanged.connect(self.settings_changed)
+        od_inner.addWidget(self.show_4sigma_cb)
+
+        self.show_2sigma_cb = QCheckBox("2σ-tærskel")
+        self.show_2sigma_cb.setChecked(True)
+        self.show_2sigma_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_2sigma_cb.stateChanged.connect(self.settings_changed)
+        od_inner.addWidget(self.show_2sigma_cb)
+
+        self.show_survival_cb = QCheckBox("Overlevelseskurve")
+        self.show_survival_cb.setChecked(True)
+        self.show_survival_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_survival_cb.stateChanged.connect(self.settings_changed)
+        od_inner.addWidget(self.show_survival_cb)
+
+        self.show_od_legend_cb = QCheckBox("Vis forklaring")
+        self.show_od_legend_cb.setChecked(False)
+        self.show_od_legend_cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+        self.show_od_legend_cb.stateChanged.connect(self.settings_changed)
+        od_inner.addWidget(self.show_od_legend_cb)
+
+        od_group.setLayout(od_inner)
+        layout.addWidget(od_group)
+
+        # Sync group (hidden until 2-graf mode)
+        self.sync_group = QGroupBox("Synkroniser A↔B")
+        self.sync_group.setStyleSheet(
+            f"QGroupBox {{ color:{ACCENT}; font-weight:bold; border:1px solid {BORDER};"
+            f" border-radius:6px; margin-top:8px; padding-top:8px; background:{PANEL_BG}; }}"
+            f"QGroupBox::title {{ subcontrol-origin:margin; left:8px; background:{PANEL_BG}; padding:0 4px; }}"
+        )
+        sync_layout = QVBoxLayout()
+        sync_layout.setSpacing(4)
+        self.sync_all_cb = QCheckBox("Alle")
+        self.sync_all_cb.setStyleSheet(
+            f"color:{ACCENT}; font-weight:bold; background:transparent;")
+        sync_layout.addWidget(self.sync_all_cb)
+
+        SYNC_GROUPS = [
+            ("Datasæt",              ['datasæt']),
+            ("Kassationsårsag",      ['kassationsårsag']),
+            ("X-akse skala",         ['x_skala']),
+            ("Levetid",              ['min_dage', 'max_dage']),
+            ("Antal Vaske",          ['min_vask', 'max_vask']),
+            ("Vaske Pr. Måned",      ['min_ratio', 'max_ratio']),
+            ("Graftype & Bins",      ['plot_type', 'bins']),
+            ("Farveskala & Linjer",  ['log_color', 'show_reg', 'ref_lines', 'show_percentiles']),
+        ]
+        self._sync_key_map = SYNC_GROUPS
+        self.sync_cbs: dict[str, QCheckBox] = {}
+        for label, _ in SYNC_GROUPS:
+            cb = QCheckBox(label)
+            cb.setStyleSheet(f"color:{TEXT}; background:transparent;")
+            sync_layout.addWidget(cb)
+            self.sync_cbs[label] = cb
+        self.sync_group.setLayout(sync_layout)
+        self.sync_group.setVisible(False)
+        layout.addWidget(self.sync_group)
+
+        self.sync_all_cb.stateChanged.connect(self._on_sync_all_changed)
+        for cb in self.sync_cbs.values():
+            cb.stateChanged.connect(self._on_sync_individual_changed)
+
+        layout.addStretch()
+
+        # Wire sliders ↔ edits
+        self.min_dage_slider.valueChanged.connect(self._sync_dage_slider_to_edit)
+        self.max_dage_slider.valueChanged.connect(self._sync_dage_slider_to_edit)
+        self.min_vask_slider.valueChanged.connect(
+            lambda v: self._sync_int_slider_to_edit(v, self.min_vask_edit))
+        self.max_vask_slider.valueChanged.connect(
+            lambda v: self._sync_int_slider_to_edit(v, self.max_vask_edit))
+        self.min_ratio_slider.valueChanged.connect(
+            lambda v: self._sync_ratio_slider_to_edit(v, self.min_ratio_edit))
+        self.max_ratio_slider.valueChanged.connect(
+            lambda v: self._sync_ratio_slider_to_edit(v, self.max_ratio_edit))
+        self.min_dage_edit.editingFinished.connect(
+            lambda: self._sync_dage_edit_to_slider(self.min_dage_edit, self.min_dage_slider))
+        self.max_dage_edit.editingFinished.connect(
+            lambda: self._sync_dage_edit_to_slider(self.max_dage_edit, self.max_dage_slider))
+        self.min_vask_edit.editingFinished.connect(
+            lambda: self._sync_int_edit_to_slider(self.min_vask_edit, self.min_vask_slider))
+        self.max_vask_edit.editingFinished.connect(
+            lambda: self._sync_int_edit_to_slider(self.max_vask_edit, self.max_vask_slider))
+        self.min_ratio_edit.editingFinished.connect(
+            lambda: self._sync_ratio_edit_to_slider(self.min_ratio_edit, self.min_ratio_slider))
+        self.max_ratio_edit.editingFinished.connect(
+            lambda: self._sync_ratio_edit_to_slider(self.max_ratio_edit, self.max_ratio_slider))
+        for sl in [self.min_dage_slider, self.max_dage_slider,
+                   self.min_vask_slider,  self.max_vask_slider,
+                   self.min_ratio_slider, self.max_ratio_slider]:
+            sl.valueChanged.connect(self.settings_changed)
+
+        # Snap connections — connect AFTER settings_changed so the edit boxes
+        # end up showing the snapped value when dragging with the mouse.
+        # Dage sliders use magnetic snap (sticky near multiples, free in between).
+        # step = how far apart the snap points are; radius = sticky zone around each point.
+        _DAGE_SNAP = {'Måneder': (30, 8), 'År': (183, 40)}
+        self._dage_step, self._dage_snap_radius = _DAGE_SNAP[self._current_skala()]
+        for sl in [self.min_dage_slider, self.max_dage_slider]:
+            sl.setSingleStep(self._dage_step)
+            sl.valueChanged.connect(lambda v, s=sl: self._snap_dage_slider(s))
+        self._sync_dage_slider_to_edit()  # show years/months from startup, not raw days
+        self.min_vask_slider.valueChanged.connect(
+            lambda v: self._snap_min_vask(self.min_vask_slider))
+        self.max_vask_slider.valueChanged.connect(
+            lambda v: self._snap_slider(self.max_vask_slider, 50))
+        for sl in [self.min_ratio_slider, self.max_ratio_slider]:
+            sl.valueChanged.connect(lambda v, s=sl: self._snap_slider(s, 50))
+
+    # ── Slider ↔ edit sync helpers ────────────────────────────────────────────
+
+    def _current_skala(self) -> str:
+        return next((s for s, b in self.skala_btns.items() if b.isChecked()), 'År')
+
+    def _days_to_display(self, days: int) -> str:
+        skala = self._current_skala()
+        div   = SCALE_CONFIG[skala]['divisor']
+        if skala == 'Måneder': return f"{days / div:.1f}"
+        return f"{days / div:.2f}"
+
+    def _display_to_days(self, text: str):
+        try:
+            return int(round(float(text) * SCALE_CONFIG[self._current_skala()]['divisor']))
+        except (ValueError, KeyError):
+            return None
+
+    def _sync_dage_slider_to_edit(self):
+        self.min_dage_edit.setText(self._days_to_display(self.min_dage_slider.value()))
+        self.max_dage_edit.setText(self._days_to_display(self.max_dage_slider.value()))
+
+    def _sync_dage_edit_to_slider(self, edit, slider):
+        days = self._display_to_days(edit.text())
+        if days is not None:
+            slider.setValue(max(slider.minimum(), min(slider.maximum(), days)))
+        else:
+            edit.setText(self._days_to_display(slider.value()))
+
+    def _sync_int_slider_to_edit(self, v, edit):
+        edit.setText(str(v))
+
+    def _sync_int_edit_to_slider(self, edit, slider):
+        try:
+            v = max(slider.minimum(),
+                    min(slider.maximum(), int(round(float(edit.text())))))
+            slider.setValue(v)
+        except ValueError:
+            edit.setText(str(slider.value()))
+
+    def _sync_ratio_slider_to_edit(self, v, edit):
+        edit.setText(f"{v / 100:.2f}")
+
+    def _sync_ratio_edit_to_slider(self, edit, slider):
+        try:
+            v = max(slider.minimum(),
+                    min(slider.maximum(), int(round(float(edit.text()) * 100))))
+            slider.setValue(v)
+        except ValueError:
+            edit.setText(f"{slider.value() / 100:.2f}")
+
+    @staticmethod
+    def _snap_slider(slider, step):
+        """Hard snap to the nearest multiple of step."""
+        v = slider.value()
+        snapped = round(v / step) * step
+        snapped = max(slider.minimum(), min(slider.maximum(), snapped))
+        if v != snapped:
+            slider.setValue(snapped)
+
+    @staticmethod
+    def _snap_min_vask(slider):
+        """Tiered hard snap for the min-vaske slider:
+        0–50 → every 10,  50–150 → every 25,  150+ → every 50."""
+        v = slider.value()
+        step = 10 if v <= 50 else (25 if v <= 150 else 50)
+        snapped = round(v / step) * step
+        snapped = max(slider.minimum(), min(slider.maximum(), snapped))
+        if v != snapped:
+            slider.setValue(snapped)
+
+    @staticmethod
+    def _snap_slider_magnetic(slider, step, radius):
+        """Magnetic snap: only snap when within radius of a multiple of step.
+        Values in the free zone between snap points are left untouched."""
+        v = slider.value()
+        nearest = round(v / step) * step
+        nearest = max(slider.minimum(), min(slider.maximum(), nearest))
+        if abs(v - nearest) <= radius and v != nearest:
+            slider.setValue(nearest)
+
+    def _snap_dage_slider(self, slider):
+        """Scale-aware snap for the levetid sliders.
+        Måneder: hard snap to the nearest whole month (exact 30.437-day rounding).
+        År:      hard snap to the nearest 0.5 year — no in-between positions."""
+        v = slider.value()
+        skala = self._current_skala()
+        if skala == 'Måneder':
+            n = round(v / 30.437)
+            snapped = round(n * 30.437)
+        else:  # År
+            half_year = 365.25 / 2
+            n = round(v / half_year)
+            snapped = round(n * half_year)
+        snapped = max(slider.minimum(), min(slider.maximum(), snapped))
+        if v != snapped:
+            slider.setValue(snapped)
+
+    # ── Sync group helpers ────────────────────────────────────────────────────
+
+    def _on_sync_all_changed(self, state):
+        checked = state == Qt.Checked
+        for cb in self.sync_cbs.values():
+            cb.blockSignals(True); cb.setChecked(checked); cb.blockSignals(False)
+
+    def _on_sync_individual_changed(self):
+        all_on = all(cb.isChecked() for cb in self.sync_cbs.values())
+        self.sync_all_cb.blockSignals(True)
+        self.sync_all_cb.setChecked(all_on)
+        self.sync_all_cb.blockSignals(False)
+
+    def synced_keys(self) -> set:
+        keys = set()
+        for label, key_list in self._sync_key_map:
+            if self.sync_cbs[label].isChecked():
+                keys.update(key_list)
+        return keys
+
+    # ── Skala change ──────────────────────────────────────────────────────────
+
+    def _on_skala_changed(self, _btn):
+        for s, b in self.skala_btns.items():
+            b.setStyleSheet(toggle_style(b.isChecked()))
+        skala = self._current_skala()
+        self._dage_section_label.setTitle({
+            'Måneder': 'Måneder i cirkulation',
+            'År':      'År i cirkulation',
+        }[skala])
+        self._dage_step, self._dage_snap_radius = {
+            'Måneder': (30, 8), 'År': (183, 40)
+        }[skala]
+        for sl in [self.min_dage_slider, self.max_dage_slider]:
+            sl.setSingleStep(self._dage_step)
+        self._sync_dage_slider_to_edit()
+        self.settings_changed.emit()
+
+    # ── Dataset change ────────────────────────────────────────────────────────
+
+    def _on_dataset_changed(self, name: str):
+        df = DATASET_MAP[name]
+        self._update_arsager()
+        dage_max = min(int(df['Dage i cirkulation'].max()) + 100, MAX_DAGE)
+        self.min_dage_slider.setMaximum(dage_max)
+        self.max_dage_slider.setMaximum(dage_max)
+        self.max_dage_slider.setValue(min(DEFAULT_MAX_DAGE, dage_max))
+        self.min_dage_slider.setValue(0)
+        self._sync_dage_slider_to_edit()
+        vask_max = int(df['Total antal vask'].max()) + 10
+        self.min_vask_slider.setMaximum(vask_max)
+        self.max_vask_slider.setMaximum(vask_max)
+        self.max_vask_slider.setValue(DEFAULT_MAX_VASK)
+        self.min_vask_slider.setValue(0)
+        rmin, rmax = ratio_range(df)
+        self.min_ratio_slider.setMinimum(int(rmin * 100))
+        self.min_ratio_slider.setMaximum(int(rmax * 100))
+        self.max_ratio_slider.setMinimum(int(rmin * 100))
+        self.max_ratio_slider.setMaximum(int(rmax * 100))
+        self.min_ratio_slider.setValue(int(rmin * 100))
+        self.max_ratio_slider.setValue(int(rmax * 100))
+        self.ratio_group.setVisible(RATIO_COL in df.columns)
+        self.settings_changed.emit()
+
+    def _update_arsager(self):
+        df      = DATASET_MAP[self.ds_combo.currentText()]
+        current = self.ar_combo.currentText()
+        self.ar_combo.blockSignals(True)
+        self.ar_combo.clear()
+        for a in get_arsager(df):
+            self.ar_combo.addItem(a)
+        idx = self.ar_combo.findText(current)
+        self.ar_combo.setCurrentIndex(max(0, idx))
+        self.ar_combo.blockSignals(False)
+
+    # ── Load / Save / Delete ──────────────────────────────────────────────────
+
+    def _refresh_saved(self):
+        self.load_combo.blockSignals(True)
+        self.load_combo.clear()
+        folders = get_saved_folders()
+        for f in (folders or ["(ingen gemte grafer)"]):
+            self.load_combo.addItem(f)
+        self.load_combo.blockSignals(False)
+
+    def apply_settings(self, s: dict) -> None:
+        """Apply a settings dict to all control widgets and trigger a redraw."""
+        if s.get('datasæt') in DATASET_MAP:
+            self.ds_combo.setCurrentText(s['datasæt'])
+        if s.get('kassationsårsag'):
+            idx = self.ar_combo.findText(s['kassationsårsag'])
+            if idx >= 0: self.ar_combo.setCurrentIndex(idx)
+        if s.get('plot_type'):
+            self.plot_type_combo.setCurrentText(s['plot_type'])
+        if s.get('x_skala') in self.skala_btns:
+            for btn in self.skala_btns.values(): btn.setChecked(False)
+            self.skala_btns[s['x_skala']].setChecked(True)
+            for b in self.skala_btns.values():
+                b.setStyleSheet(toggle_style(b.isChecked()))
+        if s.get('bins'):
+            self.bins_slider.setValue(s['bins'])
+        if s.get('min_dage') is not None:
+            self.min_dage_slider.setValue(min(s['min_dage'], self.min_dage_slider.maximum()))
+        if s.get('max_dage') is not None:
+            self.max_dage_slider.setValue(min(s['max_dage'], self.max_dage_slider.maximum()))
+        self._sync_dage_slider_to_edit()
+        if s.get('min_vask') is not None:
+            self.min_vask_slider.setValue(min(s['min_vask'], self.min_vask_slider.maximum()))
+        if s.get('max_vask') is not None:
+            self.max_vask_slider.setValue(min(s['max_vask'], self.max_vask_slider.maximum()))
+        if s.get('log_color')      is not None: self.log_cb.setChecked(s['log_color'])
+        if s.get('show_reg')       is not None: self.show_reg_cb.setChecked(s['show_reg'])
+        if s.get('show_4sigma')    is not None: self.show_4sigma_cb.setChecked(s['show_4sigma'])
+        if s.get('show_2sigma')    is not None: self.show_2sigma_cb.setChecked(s['show_2sigma'])
+        if s.get('show_survival')  is not None: self.show_survival_cb.setChecked(s['show_survival'])
+        if s.get('show_od_legend') is not None: self.show_od_legend_cb.setChecked(s['show_od_legend'])
+        if s.get('ref_lines'):
+            for lbl, cb in self.ref_cbs.items():
+                cb.setChecked(lbl in s['ref_lines'])
+        if s.get('show_percentiles'):
+            for lbl, cb in self.pct_cbs.items():
+                cb.setChecked(lbl in s['show_percentiles'])
+        if s.get('min_ratio') is not None:
+            self.min_ratio_slider.setValue(
+                int(min(s['min_ratio'] * 100, self.min_ratio_slider.maximum())))
+        if s.get('max_ratio') is not None:
+            self.max_ratio_slider.setValue(
+                int(min(s['max_ratio'] * 100, self.max_ratio_slider.maximum())))
+        if s.get('produkt_filter') is not None:
+            self.produkt_search.setText(s['produkt_filter'])
+        if s.get('produkt_hel_ord') is not None:
+            self.produkt_hel_ord_cb.setChecked(s['produkt_hel_ord'])
+        self.settings_changed.emit()
+
+    def _do_load(self):
+        folder = self.load_combo.currentText()
+        if folder == "(ingen gemte grafer)":
+            return
+        try:
+            with open(os.path.join(SAVE_DIR, folder, 'settings.json'),
+                      encoding='utf-8') as f:
+                s = json.load(f)
+        except Exception as e:
+            self.io_label.setText(f"Fejl: {e}"); return
+        self.apply_settings(s)
+        self.folder_edit.setText(folder)
+        md_path = os.path.join(SAVE_DIR, folder, 'README.md')
+        if os.path.isfile(md_path):
+            txt  = open(md_path, encoding='utf-8').read()
+            note = txt.split('## Note')[-1].strip().lstrip('\n') if '## Note' in txt else ''
+            self.note_edit.setPlainText(note)
+        self.io_label.setText(f"✔ Indlæst: {folder}")
+
+    def do_save(self, canvas, filtered_df=None) -> None:
+        s   = self.get_settings()
+        raw = self.folder_edit.text().strip()
+        folder = (raw.replace(' ', '_') if raw else
+                  f"{s['datasæt']}_{s['kassationsårsag']}_"
+                  f"{datetime.now().strftime('%Y%m%d_%H%M%S')}".replace(' ', '_'))
+        subdir = os.path.join(SAVE_DIR, folder)
+        os.makedirs(subdir, exist_ok=True)
+        canvas.fig.savefig(os.path.join(subdir, 'histogram.jpeg'),
+                           dpi=150, bbox_inches='tight')
+        if filtered_df is not None:
+            filtered_df.to_csv(os.path.join(subdir, 'data.csv'),
+                               index=False, encoding='utf-8-sig')
+        s['gemt'] = datetime.now().isoformat()
+        with open(os.path.join(subdir, 'settings.json'), 'w', encoding='utf-8') as f:
+            json.dump(s, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(subdir, 'README.md'), 'w', encoding='utf-8') as f:
+            f.write(f"# {s['datasæt']} — {s['kassationsårsag']}\n\n"
+                    f"*{datetime.now():%Y-%m-%d %H:%M:%S}*\n\n")
+            note = self.note_edit.toPlainText().strip()
+            if note:
+                f.write(f"## Note\n\n{note}\n")
+        self.io_label.setText(f"✔ Gemt: {folder}/")
+        self._refresh_saved()
+
+    def _do_delete(self):
+        folder = self.load_combo.currentText()
+        if folder == "(ingen gemte grafer)":
+            return
+        if QMessageBox.question(self, "Slet", f"Slet '{folder}'?",
+                                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            import shutil
+            try:
+                shutil.rmtree(os.path.join(SAVE_DIR, folder))
+                self._refresh_saved()
+                self.io_label.setText(f"✔ Slettet: {folder}")
+            except Exception as e:
+                self.io_label.setText(f"Fejl: {e}")
+
+    # ── Settings dict ─────────────────────────────────────────────────────────
+
+    def get_settings(self) -> dict:
+        skala = next((s for s, b in self.skala_btns.items() if b.isChecked()), 'År')
+        return {
+            'datasæt':          self.ds_combo.currentText(),
+            'kassationsårsag':  self.ar_combo.currentText(),
+            'plot_type':        self.plot_type_combo.currentText(),
+            'bins':             self.bins_slider.value(),
+            'log_color':        self.log_cb.isChecked(),
+            'show_reg':         self.show_reg_cb.isChecked(),
+            'show_4sigma':      self.show_4sigma_cb.isChecked(),
+            'show_2sigma':      self.show_2sigma_cb.isChecked(),
+            'show_survival':    self.show_survival_cb.isChecked(),
+            'show_od_legend':   self.show_od_legend_cb.isChecked(),
+            'ref_lines':        [l for l, cb in self.ref_cbs.items() if cb.isChecked()],
+            'show_percentiles': [l for l, cb in self.pct_cbs.items() if cb.isChecked()],
+            'x_skala':          skala,
+            'min_dage':         self.min_dage_slider.value(),
+            'max_dage':         self.max_dage_slider.value(),
+            'min_vask':         self.min_vask_slider.value(),
+            'max_vask':         self.max_vask_slider.value(),
+            'min_ratio':        self.min_ratio_slider.value() / 100.0,
+            'max_ratio':        self.max_ratio_slider.value() / 100.0,
+            'produkt_filter':   self.produkt_search.text().strip(),
+            'produkt_hel_ord':  self.produkt_hel_ord_cb.isChecked(),
+        }

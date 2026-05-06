@@ -1,0 +1,30 @@
+{
+  "datasæt": "T-shirt",
+  "kassationsårsag": "Alm.slid uden restværdi",
+  "plot_type": "Begge",
+  "bins": 60,
+  "log_color": true,
+  "log_y_hist": false,
+  "show_reg": false,
+  "show_4sigma": true,
+  "show_2sigma": true,
+  "show_survival": true,
+  "show_od_legend": false,
+  "vmin": 0.1,
+  "ref_lines": [],
+  "show_percentiles": [
+    "25%",
+    "Median",
+    "75%"
+  ],
+  "x_skala": "År",
+  "min_dage": 0,
+  "max_dage": 2922,
+  "min_vask": 0,
+  "max_vask": 250,
+  "min_ratio": 0.0,
+  "max_ratio": 4.51,
+  "min_alpha": 0.0,
+  "produkt_filter": "Hvid",
+  "gemt": "2026-04-22T09:59:58.248279"
+}
