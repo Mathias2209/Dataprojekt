@@ -3,3 +3,5 @@ dataloader.ipynb
 2D Histogram/Settings/__pycache__/data_cache.cpython-313.pyc
 dataanalyse/__pycache__/weibull_fit_metrics.cpython-313.pyc
 2D Histogram/Settings/__pycache__/weibull_cache.cpython-313.pyc
+.vscode/settings.json
+indledende dataanalyse/__pycache__/dataloader.cpython-313.pyc
