@@ -2,13 +2,20 @@
 
 Textile lifetime analysis: Exploring real-world industrial data from a Danish
 workwear company
-## Main Branch
+
+## Branches
+
+**Main Branch**  
+**Levetids modelering**  
+**Proof of concept**
+
+## Main Branch indhold
 **Dataprojekt kontrakt:**  
 Indeholder en samarbejdskontrakt mellem gruppemedlemmer, der sikrer sig det bedst mulige gruppe miljø.
 
 **Project Decriptions:**  
 Indeholder følgende
-1. titlen på projektet, navne på gruppe medlemmer og en figur der illustartivt viser vores projekt.
+1. Titlen på projektet, navne på gruppe medlemmer og en figur der illustartivt viser vores projekt.
 2. Et klart og let forståeligt overblik over de interesante hoved problemer i projektet.
 3. Exempler på data brugt i projektet med tilhørende deskriptiv statistik
 4. Beskrivelse af hvor vi nåede til og hvad vi ville ønske vi kunne gjort.
