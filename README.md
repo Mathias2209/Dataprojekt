@@ -13,7 +13,7 @@ workwear company
 **Dataprojekt kontrakt:**  
 Indeholder en samarbejdskontrakt mellem gruppemedlemmer, der sikrer sig det bedst mulige gruppe miljø.
 
-## Anbefaliner til virksomheden:**  
+**Anbefaliner til virksomheden:**  
 Indeholder vores endelige anbefalinger til, hvordan data bør indsamles og behandles fra virksomhedens side i fremtiden, med henblik på at muliggøre mere fyldestgørende og dybdegående analyser samt mere konkrete resultater.
 
 **Project Decriptions:**  
