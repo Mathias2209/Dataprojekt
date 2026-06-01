@@ -2,3 +2,4 @@ ppc.nc
 trace.nc
 *.pyc
 *.nc
+.vscode/settings.json
