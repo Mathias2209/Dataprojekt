@@ -1,7 +1,7 @@
 # Dataprojekt
 
 Textile lifetime analysis: Exploring real-world industrial data from a Danish
-workwear company
+workwear company.
 
 ## Branches
 
@@ -11,7 +11,7 @@ workwear company
 
 ## Main Branch indhold
 **Dataprojekt kontrakt:**  
-Indeholder en samarbejdskontrakt mellem gruppemedlemmer, der sikrer sig det bedst mulige gruppe miljø.
+Indeholder en samarbejdskontrakt mellem gruppemedlemmer, der sikrer sig det bedst mulige gruppemiljø.
 
 **Anbefaliner til virksomheden:**  
 Indeholder vores endelige anbefalinger til, hvordan data bør indsamles og behandles fra virksomhedens side i fremtiden, med henblik på at muliggøre mere fyldestgørende og dybdegående analyser samt mere konkrete resultater.
@@ -24,16 +24,16 @@ Indeholder følgende
 4. Beskrivelse af hvor vi nåede til og hvad vi ville ønske vi kunne gjort.
 
 **Dataloader:**  
-Program brugt til at indhendte og sortere dataen
+Program brugt til at indhente og sortere dataen.
 
 **Folder Data:**  
-Indeholder alt data som virksomheden, prjektet omhandler, har stillet til rådighed for Dataprojektet.
+Indeholder alt data som virksomheden, projektet omhandler, har stillet til rådighed for Dataprojektet.
 
 **Indledende Dataanalyse:**  
-Indeholder de indledende data analyser lavet i første del af projektet. Ofte første udkast af endelige modeller.
+Indeholder de indledende dataanalyser lavet i første del af projektet. Ofte første udkast af endelige modeller.
 
 **Dataanalyse:**  
-Indeholder analyser brugt i vores histogram App og analyser brugt til udforske mulige sammenhæng.
+Indeholder analyser brugt i vores histogram app og analyser brugt til udforske mulige sammenhæng.
 
 **2D Histogram:**  
 Indeholder visualiserings værktøjet og de filer den skal bruge brug til at visualisere datasættet 'PLC, product detaljeret, Aarhus'.
