@@ -20,6 +20,6 @@ Et forsøg på at analysere nogle pris-relaterede nøgletal, med nogle **opdigte
 Dette indebærer pris-per-dag for levetiden og break even punktet for to produkter, hvor et dyrere produkt bliver det billigste pr. dag, samt viser overlevelseskurver og empirisk levetidsfordeling side om side.
 
 ## weibull_fit_metrics
-Heri evalueres $135$ af vores Weibull modeller, med mere end $10$ observationer, ved hjælp af $R^2$, Root Mean Squared Error, Mean Absolute Error, Kolmogorov-Smirnov statistik og Kolmogorov-Smirnov p-værdi. 
+Heri evalueres $135$ af vores Weibull modeller, med mere end $10$ observationer, ved hjælp af $R^2$, Root Mean Squared Error, Mean Absolute Error, Kolmogorov-Smirnov statistik og p-værdier hertil. 
 
 Derudover identificeres og undersøges de dårligste af modellerne, som skyldes negative $R^2$ værdier og høje KS-stats.
