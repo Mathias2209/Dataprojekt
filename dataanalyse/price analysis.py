@@ -1,11 +1,11 @@
 """
-cost_comparison.py — Cost-per-day analysis for two T-shirt products
+price analysis.py — Cost-per-day analysis for two T-shirt products
 ─────────────────────────────────────────────────────────────────────
 Compares two products on cost efficiency over their lifetime using
 the empirical survival function derived from Weibull MCMC posteriors.
 
 Usage:
-    python cost_comparison.py
+    python price_analysis.py
 
 Configuration is at the top of the file — set product names and prices.
 Requires the same folder as the histogram app (uses data_cache.pkl).
