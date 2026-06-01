@@ -4,6 +4,33 @@ import io
 import urllib3
 import re
 
+
+'''
+# Dataloader
+
+## Indlæsning og sammensætning af data 
+
+Dataloaderen henter de relevante filer fra Github via Github API, herefter sammensættes de 12 datasæt til et stort samlet datasæt. 
+
+## Datacleaning 
+
+Først fjernes såkaldte 'duplicates', hvilket vi har beskrevet i filen UI_problems. Derudover beholder vi datapunkter der opfylder følgende krav: 
+
+- Stk. pr. kassation = 1
+- Antal vaske >= 1
+- Dage i cirkulation >= 1
+
+Derudover tilføjer vi også en kolonne med vask pr. måned som er beregnes ved at dividere antal vaske med antal dage i cirkulation
+
+## Data kategorisering 
+
+Efterfølgende bliver data opdelt i en række kategorier baseret på generel beklædningstype med underkategorier hvor det giver mening. 
+
+Kategorisering sker i to trin. Først identifiseres en produkttype ud fra nøgleord fundet i data (f.eks. `Skjorte`, `Bukser`...). Produkter der ikke matcher nogle af disse nøgleord, bliver samlet i `Andet`
+
+Herefter samles beslægtede produkttyper i overkategorier `Shorts` eller `Bukser`.
+'''
+
 # Remove warings when downloading files from GitHub
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
